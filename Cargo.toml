@@ -10,3 +10,5 @@ eframe = "0.23.0"
 egui = "0.23.0"
 egui_extras = { version = "*", features = ["all_loaders"] }
 image = { version = "0.24", features = ["jpeg", "png"] }
+instant = "0.1.12"
+screenshots = "0.8.4"
