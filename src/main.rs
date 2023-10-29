@@ -4,13 +4,7 @@ use eframe::egui;
 use screenshots::Screen;
 use std::time::Instant;
 
-use egui::Key;
-
-// Struttura per gestire la chiave e la corrispettiva stringa
-struct KeyData {
-    key: Key,
-    key_string: String,
-}
+use egui::{ Key, Modifiers, ModifierNames, KeyboardShortcut };
 
 fn main() -> Result<(), eframe::Error> {
 
@@ -24,13 +18,22 @@ fn main() -> Result<(), eframe::Error> {
     let mut cattura=0;
     let mut ritardo=0;
     
-    // Variabili per rappresentare la chiave e la stringa
-    let mut key_data = KeyData {
-        key: Key::S,
-        key_string: "S".to_string(),
+
+    // Variabili per la shortcut
+    let mut my_shortcut = KeyboardShortcut {
+        modifiers: Modifiers::default(), // Imposta i modificatori desiderati
+        key: Key::A, // Imposta la chiave desiderata
+    };
+    let is_mac = true; // Sostituisci con `true` se sei su macOS, altrimenti `false`
+
+    let mut new_shortcut = KeyboardShortcut {
+        modifiers: my_shortcut.modifiers,
+        key: my_shortcut.key,
     };
 
     let mut is_shortcut_modal_open = false;
+    // Fine variabili per la shortcut
+
 
     eframe::run_simple_native("My egui App", options, move |ctx, _frame| {
         egui_extras::install_image_loaders(ctx);
@@ -74,24 +77,70 @@ fn main() -> Result<(), eframe::Error> {
                 }
             });
 
-            // Gestione della window per la modifica della shortcut
+            // --- Gestione della window per la modifica della shortcut ---
             if is_shortcut_modal_open {
-                egui::Window::new("Finestra Modale").show(&ctx, |ui| {
-                    ui.label("Questo è il contenuto della finestra modale.");
-            
+                egui::Window::new("Modifica shortcut").show(&ctx, |ui| {
+                    // Qui puoi rilevare gli eventi di input e aggiornare la variabile key
+                    for event in ui.input(|i| i.events.clone()) {
+                        match event {
+                            egui::Event::Key { modifiers: event_modifiers, key: event_key, pressed, .. } => {
+                                println!("pressed {:}", pressed);
+                                println!("event_modifiers {:?}", event_modifiers);
+                                println!("event_key {:}", event_key.name());
+                                if pressed {
+                                    // Solo se il tasto è stato premuto
+                                    new_shortcut.modifiers = event_modifiers;
+                                    new_shortcut.key = event_key;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    ui.label(&format!("Hai premuto: {:?}", new_shortcut.format(&ModifierNames {
+                        is_short: false,
+                        alt: "Alt",
+                        ctrl: "Ctrl",
+                        shift: "Shift",
+                        mac_cmd: "Cmd",
+                        mac_alt: "Option",
+                        concat: "+",
+                    }, is_mac)));
+                    if ui.button("Salva").clicked() {
+                        // Salva le modifiche
+                        my_shortcut.modifiers = new_shortcut.modifiers;
+                        my_shortcut.key = new_shortcut.key;
+                        is_shortcut_modal_open = false; // Chiudi la finestra
+                    }
+                    
                     if ui.button("Chiudi").clicked() {
-                        is_shortcut_modal_open = false; // Chiudi la finestra modale quando l'utente fa clic su "Chiudi"
+                        is_shortcut_modal_open = false; // Chiudi la finestra
                     }
                 });
             }
-            
-        });
+
+            // Se la shortcut viene premuta... -> da sostituire con l'azione di cattura
+            if ctx.input(|i| i.clone().consume_shortcut(&my_shortcut)) {
+                // Esegui azioni basate sulla copia di InputState
+                println!("Shortcut premuta!");
+            }
+        });    
 
         // --- PANNELLO CENTRALE ---
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.centered_and_justified(|ui| {
-                ui.heading(&format!("Premi il tasto {} per catturare il contenuto dello schermo senza avviare l'Applicazione", key_data.key_string));
-             });
+            ui.heading(
+                format!(
+                    "Premi il tasto {} per catturare il contenuto dello schermo senza avviare l'Applicazione",
+                    my_shortcut.format(&ModifierNames {
+                        is_short: false,
+                        alt: "Alt",
+                        ctrl: "Ctrl",
+                        shift: "Shift",
+                        mac_cmd: "Cmd",
+                        mac_alt: "Option",
+                        concat: "+",
+                    }, is_mac)
+                )
+            );  
         });
     })
 }
