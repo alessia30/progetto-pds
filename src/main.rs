@@ -2,7 +2,8 @@
 
 use eframe::egui;
 use screenshots::Screen;
-use std::time::Instant;
+use std::time::{Duration, SystemTime};
+use std::thread::sleep;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -11,22 +12,39 @@ fn main() -> Result<(), eframe::Error> {
     };
     let catture = vec!["Rettangolo", "Schermo intero", "\u{1F5D4} Finestra","Mano libera"];
     let ritardi = vec!["Nessun ritardo", "3 secondi", "5 secondi","10 secondi"];
+    let rit_val = vec![0, 3, 5, 10];
     let mut cattura=0;
     let mut ritardo=0;
+    let mut rit = 0;
+    
     eframe::run_simple_native("My egui App", options, move |ctx, _frame| {
         egui_extras::install_image_loaders(ctx);
         egui::TopBottomPanel::top("my_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("\u{2795} Nuovo").on_hover_text("Nuova Cattura").clicked() {
-                    let screens = Screen::all().unwrap();
-                        for screen in screens {
-                            println!("capturer {screen:?}");
-                        //     let mut image = screen.capture().unwrap();
-                        //    image.save("target/sc.png").unwrap();
-                        let image = screen.capture_area(300, 300, 300, 300).unwrap();
-                        image.save("target/capture_display_with_point.png").unwrap();
-
+                    //timer 
+                        let start = SystemTime::now();
+                        sleep(Duration::new(rit, 0));
+                        match start.elapsed() {
+                            Ok(elapsed) => {
+                                let screens = Screen::all().unwrap();
+                                    for screen in screens {
+                                        println!("capturer {screen:?}");
+                                    //     let mut image = screen.capture().unwrap();
+                                    //    image.save("target/sc.png").unwrap();
+                                    let image = screen.capture_area(300, 300, 300, 300).unwrap();
+                                    image.save("target/capture_display_with_point.png").unwrap();
+            
+                                    }
+                            }
+                            Err(e) => {
+                                println!("Timer error");
+                            }
                         }
+                
+
+
+
                 }
                 ui.add_space(60.0);
                 egui::ComboBox::from_id_source(2)
@@ -38,17 +56,21 @@ fn main() -> Result<(), eframe::Error> {
                         }
                     }).response.on_hover_text("Modalità di cattura");
                 ui.add_space(10.0);
+                
                 egui::ComboBox::from_id_source(1)
                 .width(30.0)
                 .selected_text(ritardi[ritardo])
                 .show_ui(ui, |ui| {
                     for (i, option) in ritardi.iter().enumerate() {
-                        ui.selectable_value(&mut ritardo, i, option.to_string());
+                        if ui.selectable_value(&mut ritardo, i, option.to_string()).clicked() {
+                            rit = rit_val[i];
+                            // println!("{rit:?}");
+                        }
                     }
                 }).response.on_hover_text("Ritarda cattura");
+                
+                
                 ui.add_space(20.0);
-                
-                
                 if ui.add(egui::ImageButton::new(egui::include_image!("../img/add.png"))).on_hover_text("Nuova Cattura").clicked() {
                     
                 }
