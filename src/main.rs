@@ -1,8 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use eframe::egui;
+use egui::Event;
 use screenshots::Screen;
-use std::time::Instant;
+use std::{time::{Instant, Duration}, sync::WaitTimeoutResult, thread::sleep};
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -13,20 +14,33 @@ fn main() -> Result<(), eframe::Error> {
     let ritardi = vec!["Nessun ritardo", "3 secondi", "5 secondi","10 secondi"];
     let mut cattura=0;
     let mut ritardo=0;
-    eframe::run_simple_native("My egui App", options, move |ctx, _frame| {
+    
+    //let mut capture_area = None;
+    //let mut capturing = false;
+
+    // Inizializza l'oggetto ScreenCapture
+    /*let config = CaptureConfig {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        output_format: "png".to_string(),
+    };*/
+   // let mut capture = screenshots::Screen::new(config);
+   let mut is_selecting = false; // Indica se l'utente sta selezionando un'area
+    let mut start_x = 0.0; // Coordinate di inizio del trascinamento
+    let mut start_y = 0.0;
+
+    eframe::run_simple_native("My egui App", options, move |ctx, frame| {
         egui_extras::install_image_loaders(ctx);
         egui::TopBottomPanel::top("my_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if ui.button("\u{2795} Nuovo").on_hover_text("Nuova Cattura").clicked() {
-                    let screens = Screen::all().unwrap();
-                        for screen in screens {
-                            println!("capturer {screen:?}");
-                        //     let mut image = screen.capture().unwrap();
-                        //    image.save("target/sc.png").unwrap();
-                        let image = screen.capture_area(300, 300, 300, 300).unwrap();
-                        image.save("target/capture_display_with_point.png").unwrap();
-
-                        }
+                if ui.button("\u{2795} Nuovo").on_hover_text("Nuova Cattura").clicked() {                  
+                    frame.set_minimized(true);
+                    for event in ctx.input(|i| i.screen_rect()){
+                        
+                    }
+                    
                 }
                 ui.add_space(60.0);
                 egui::ComboBox::from_id_source(2)
