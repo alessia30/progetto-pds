@@ -5,7 +5,7 @@ use screenshots::Screen;
 use std::time::{Duration, SystemTime};
 use std::thread::sleep;
 use image::EncodableLayout;
-use egui::{ Key, Modifiers, ModifierNames, KeyboardShortcut };
+use egui::{ Key, Modifiers, ModifierNames, KeyboardShortcut, Order, PointerButton, RawInput, Vec2, Widget, Rect, Rounding, Color32, Stroke };
 
 static DELAYS_VALUES:[u64;4]=[0,3,5,10];
 
@@ -28,10 +28,11 @@ fn main() -> Result<(), eframe::Error> {
 
 struct MyApp<'a>{
     acquiring:bool,
-    //fullscreen:bool,
+    acquired: bool,
+    color_image: Option<egui::ColorImage>,
     img:Option<egui::Image<'a>>,
     handle:Option<egui::TextureHandle>,
-    window_size: egui::Vec2,
+    window_scale: f32,
     counter:usize,
     my_shortcut:KeyboardShortcut,
     new_shortcut:KeyboardShortcut,
@@ -41,6 +42,8 @@ struct MyApp<'a>{
     delay:usize,
     is_mac:bool,
     is_shortcut_modal_open:bool,
+    start_pos:Option<egui::Pos2>,
+    current_pos:Option<egui::Pos2>,
 }
 
 impl MyApp<'_>{
@@ -49,7 +52,7 @@ impl MyApp<'_>{
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
         // for e.g. egui::PaintCallback.
-        Self{acquiring:false,img:None,handle:None,window_size:egui::vec2(0.0, 0.0),counter:0,
+        Self{acquiring:false,acquired:false,color_image:None,img:None,handle:None,window_scale:0.0,counter:0,
             my_shortcut:KeyboardShortcut {
                 modifiers: Modifiers::default(), // Imposta i modificatori desiderati
                 key: Key::A, // Imposta la chiave desiderata
@@ -60,21 +63,21 @@ impl MyApp<'_>{
             },
             captures:vec!["Rettangolo", "Schermo intero", "Finestra","Mano libera"],
             delays:vec!["Nessun ritardo", "3 secondi", "5 secondi","10 secondi"],
-            capture:0,delay:0,is_mac:true,is_shortcut_modal_open:false,
+            capture:0,delay:0,is_mac:true,is_shortcut_modal_open:false,start_pos:None,current_pos:None,
         }
     }
 }
 
 impl eframe::App for MyApp<'_>{
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame){   
-        if !self.acquiring{
+        if !self.acquiring && !self.acquired{
             egui::TopBottomPanel::top("my_panel").show(ctx, |ui| {              
                 ui.horizontal(|ui| {
                     if ui.button("\u{2795} Nuovo").on_hover_text("Nuova Cattura").clicked() {
                         self.acquiring=true;
                         //print!("pulsante premuto")      ;                                
                         frame.set_visible(false);                  
-                        self.window_size=ctx.screen_rect().size();                                       
+                                                           
                     }
                     ui.add_space(60.0);
                     egui::ComboBox::from_id_source(2)
@@ -173,6 +176,7 @@ impl eframe::App for MyApp<'_>{
             //print!("{}",self.counter);            
             ctx.request_repaint();
             if self.counter==20{
+                self.acquired=false;
                 let start = SystemTime::now();
                 sleep(Duration::new(DELAYS_VALUES[self.delay], 0));
                 match start.elapsed() {
@@ -181,10 +185,9 @@ impl eframe::App for MyApp<'_>{
                         for screen in screens {
                             println!("capturer {screen:?}");
                             let image = screen.capture().unwrap();
-                            // println!("{} {} {}",image.width(),image.height(),image.as_bytes().len());
-                            let color_image=egui::ColorImage::from_rgba_unmultiplied([image.width() as usize,image.height() as usize], image.as_bytes());
-                            self.handle= Some(ctx.load_texture("handle", color_image.clone(),egui::TextureOptions::LINEAR));
-                            let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(color_image.size[0] as f32, color_image.size[1] as f32));
+                            self.color_image=Some(egui::ColorImage::from_rgba_unmultiplied([image.width() as usize,image.height() as usize], image.as_bytes()));
+                            self.handle= Some(ctx.load_texture("handle", self.color_image.clone().unwrap(),egui::TextureOptions::LINEAR));
+                            let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
                             // println!("{} {} ",color_image.size[0],color_image.size[1]);
                             self.img = Some(egui::Image::from_texture(sized_image));
                         }
@@ -194,18 +197,67 @@ impl eframe::App for MyApp<'_>{
                     }
                 }
                 frame.set_visible(true);
+                frame.set_fullscreen(true);
             }
             if self.counter>=20{  
-                if self.window_size != ctx.screen_rect().size(){
-                    self.window_size=ctx.screen_rect().size();                  
-                }
-                let scale=ctx.screen_rect().size().x/self.img.clone().unwrap().size().unwrap().x;
-                //let image_size = egui::vec2(self.window_size.x / scale, self.window_size.y / scale);                 
-                egui::Window::new("").title_bar(false)
-                        .show(&ctx, |ui| {
-                           ui.add(self.img.clone().unwrap().fit_to_original_size(scale));            
+                egui::Window::new("")
+                    .title_bar(false)
+                    .frame(egui::Frame{fill:egui::Color32::from_white_alpha(10), ..Default::default()})
+                    .movable(false)
+                    .fixed_pos(frame.info().window_info.position.unwrap())
+                    .show(ctx, |ui| {
+                    
+                    self.img.clone().unwrap().paint_at(ui, ctx.screen_rect());
+                    
+                    let (response, painter) = ui.allocate_painter(ctx.screen_rect().size(),egui::Sense::click_and_drag() );                    ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+                   
+                    painter.rect_filled( ctx.screen_rect(), Rounding::ZERO, Color32::from_rgba_premultiplied(0, 0, 0, 130));
+                    if self.acquired{ 
+                        let rect = Rect::from_two_pos(self.start_pos.unwrap(), self.current_pos.unwrap());
+                        let pixels_per_point = frame.info().native_pixels_per_point;
+                        self.color_image=Some(self.color_image.clone().unwrap().region(&rect, pixels_per_point));
+                        self.handle= Some(ctx.load_texture("handle", self.color_image.clone().unwrap(),egui::TextureOptions::LINEAR));
+                        let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
+                        self.img = Some(egui::Image::from_texture(sized_image));
+                        self.window_scale=self.img.clone().unwrap().size().unwrap().x/(rect.max.x-rect.min.x);
+                        self.acquiring=false;
+                        self.counter=0;
+                        frame.set_fullscreen(false);
+                    }
+
+                    if response.drag_started_by(PointerButton::Primary){
+                        self.start_pos = response.interact_pointer_pos();
+                        println!("START");
+                    }
+
+                    if response.dragged_by(PointerButton::Primary){
+                        println!("DRAG");
+                        self.current_pos = response.interact_pointer_pos();
+                        painter.rect(Rect::from_two_pos(self.start_pos.unwrap(), self.current_pos.unwrap()), Rounding::ZERO,  Color32::from_rgba_premultiplied(30, 30, 30, 30),Stroke::new(2.0, Color32::WHITE) );
+                        
+                    }
+                    if response.drag_released_by(PointerButton::Primary){  
+                       // frame.request_screenshot();
+                        self.acquired=true;
+                    }
                 });
             }
+        }
+        if self.acquired && !self.acquiring{
+
+            egui::TopBottomPanel::top("my_panel").show(ctx, |ui| {
+                
+                if ui.button("\u{2795} Nuovo").on_hover_text("Nuova Cattura").clicked() {
+                    self.acquiring=true;
+                    print!("pulsante premuto");                                
+                    frame.set_visible(false);
+                                     
+                }
+            });
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let image_size = egui::vec2(self.img.clone().unwrap().size().unwrap().x / self.window_scale, self.img.clone().unwrap().size().unwrap().y / self.window_scale);  
+                ui.centered_and_justified(|ui|{ui.add(self.img.clone().unwrap().shrink_to_fit().max_size(image_size))});
+            });
         }
         
     }
