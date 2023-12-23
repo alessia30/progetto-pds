@@ -951,6 +951,12 @@ checksum = "9542a40106fdba943a055f418d1746a050e1a903a049b030c2b097d4686a33cf"
 
 [[package]]
 name = "emath"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3857d743a6e0741cdd60b622a74c7a36ea75f5f8f11b793b41d905d2c9721a4b"
+
+[[package]]
+name = "emath"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ef2b29de53074e575c18b694167ccbe6e5191f7b25fe65175a0d905a32eeec0"
@@ -2146,6 +2152,7 @@ dependencies = [
  "egui 0.23.0",
  "egui_extras",
  "egui_hotkey",
+ "emath 0.22.0",
  "image",
  "instant",
  "screenshots",
