@@ -28,6 +28,91 @@ fn main() -> Result<(), eframe::Error> {
     )
 }
 
+pub struct Painting {
+    /// in 0-1 normalized coordinates
+    lines: Vec<Vec<egui::Pos2>>,
+    stroke: Stroke,
+}
+
+impl Default for Painting {
+    fn default() -> Self {
+        Self {
+            lines: Default::default(),
+            stroke: Stroke::new(1.0, Color32::from_rgb(25, 200, 100)),
+        }
+    }
+}
+
+pub fn my_stroke_ui(ui: &mut crate::egui::Ui, stroke: &mut egui::epaint::Stroke, text: &str) {
+    let egui::epaint::Stroke { width, color } = stroke;
+    ui.vertical(|ui| {
+        ui.add(egui::DragValue::new(width).speed(0.1).clamp_range(0.0..=5.0))
+            .on_hover_text("Width");
+        //ui.add(egui::color_picker::color_edit_button_srgba(color));
+        ui.label(text);
+        // stroke preview:
+        let (_id, stroke_rect) = ui.allocate_space(ui.spacing().interact_size);
+        let left = stroke_rect.left_center();
+        let right = stroke_rect.right_center();
+        ui.painter().line_segment([left, right], (*width, *color));
+    });
+}
+
+impl Painting {
+    pub fn ui_control(&mut self, ui: &mut egui::Ui) {
+            my_stroke_ui(ui, &mut self.stroke, "Stroke");
+            ui.separator();
+            if ui.button("Clear").clicked() {
+                self.lines.clear();
+            }
+        
+    }
+
+    pub fn ui_content(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,img: egui::Image)-> egui::Response {
+        
+        let (mut response, mut painter) =
+            ui.allocate_painter(ui.min_size(), egui::Sense::drag());
+       
+       
+        println!("{} {}",ui.min_size().x,ui.min_size().y);
+        let to_screen = egui::emath::RectTransform::from_to(
+            Rect::from_min_size(egui::Pos2::ZERO, response.rect.square_proportions()),
+            response.rect,
+        );
+        let from_screen = to_screen.inverse();
+        println!("{} {}",response.rect.max.x,response.rect.max.y);
+        if self.lines.is_empty() {
+            self.lines.push(vec![]);
+        }
+
+        let current_line = self.lines.last_mut().unwrap();
+
+        if let Some(pointer_pos) = response.interact_pointer_pos() {
+            let canvas_pos = from_screen * pointer_pos;
+            if current_line.last() != Some(&canvas_pos) {
+                current_line.push(canvas_pos);
+                response.mark_changed();
+            }
+        } else if !current_line.is_empty() {
+            self.lines.push(vec![]);
+            response.mark_changed();
+        }
+
+        let shapes = self
+            .lines
+            .iter()
+            .filter(|line| line.len() >= 2)
+            .map(|line| {
+                let points: Vec<egui::Pos2> = line.iter().map(|p| to_screen * *p).collect();
+                egui::Shape::line(points, self.stroke)
+            });
+
+        painter.extend(shapes);
+
+        response
+    }
+}
+
 struct MyApp<'a>{
     acquiring:bool,
     acquired: bool,
@@ -47,6 +132,8 @@ struct MyApp<'a>{
     start_pos:Option<egui::Pos2>,
     current_pos:Option<egui::Pos2>,
     screen:usize,
+    painting:Painting,
+    acquiring_pen:bool,
 }
 
 impl MyApp<'_>{
@@ -68,6 +155,7 @@ impl MyApp<'_>{
             captures:vec!["Rettangolo", "Schermo intero", "Finestra","Mano libera"],
             delays:vec!["Nessun ritardo", "3 secondi", "5 secondi","10 secondi"],
             capture:0,delay:0,is_mac:match cc.egui_ctx.os(){ egui::os::OperatingSystem::Mac => true, _ => false },is_shortcut_modal_open:false,start_pos:None,current_pos:None,screen:1,
+            painting:Painting::default(),acquiring_pen:false,
         }
     }
 
@@ -75,7 +163,19 @@ impl MyApp<'_>{
         egui::TopBottomPanel::top("my_panel").exact_height(40.0).show(ctx, |ui| {        
             ui.horizontal_centered(|ui| {
                 
-                if ui.button(egui::RichText::new("\u{2795} Nuovo").size(14.0)).on_hover_text("Nuova Cattura").clicked() {
+                let new_style = egui::style::WidgetVisuals {
+                    weak_bg_fill: egui::Color32::from_rgb(0x29, 0x29, 0x29),
+                    bg_fill: egui::Color32::from_rgb(0x29, 0x29, 0x29),
+                    bg_stroke: Stroke { width: 1., color: egui::Color32::from_rgb(0x29, 0x29, 0x29) },
+                    rounding: egui::Rounding { nw: 2., ne: 2., sw: 2., se: 2. },
+                    fg_stroke: Stroke{ width: 1., color: egui::Color32::WHITE} ,
+                    expansion: 4.,
+          };
+          
+           ctx.set_visuals(egui::style::Visuals { widgets: egui::style::Widgets { 
+                    noninteractive: new_style, inactive: new_style, hovered: new_style, active: new_style, open: new_style
+          }, ..Default::default()});
+                if ui.add(egui::Button::new(egui::RichText::new("\u{2795} Nuovo").size(14.0))).on_hover_text("Nuova Cattura").clicked() {
                     self.acquiring=true;
                     //print!("pulsante premuto");                                
                     frame.set_visible(false);                  
@@ -115,7 +215,7 @@ impl MyApp<'_>{
                     // Bottone "Modifica Shortcut"
                     ui.visuals_mut().button_frame = false;
                     
-                    if ui.button(egui::RichText::new("\u{2699}").size(22.0)).on_hover_text("Modifica shortcut").clicked() {
+                    if ui.add(egui::Button::new(egui::RichText::new("\u{2699}").size(22.0)).frame(false)).on_hover_text("Modifica shortcut").clicked() {
                         self.is_shortcut_modal_open = true;
                     }
                     if self.acquired{
@@ -284,14 +384,52 @@ impl eframe::App for MyApp<'_>{
         }
         if self.acquired && !self.acquiring{
             self.top_panel(ctx, frame);
+            egui::SidePanel::left(egui::Id::new("my left panel")).exact_width(25.0).resizable(false).show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    if ui.add(egui::Button::new(egui::RichText::new("\u{270F}").size(22.0)).frame(false)).on_hover_text("Draw").clicked() {
+                        self.acquiring_pen = true;
+                    }
+                    self.painting.ui_control(ui);
+                });
+            });
             egui::CentralPanel::default().show(ctx, |ui| {
-                let image_size = egui::vec2(self.img.clone().unwrap().size().unwrap().x / self.window_scale, self.img.clone().unwrap().size().unwrap().y / self.window_scale);  
-                ui.centered_and_justified(|ui|{ui.add(self.img.clone().unwrap().shrink_to_fit().max_size(image_size))});
+                let image_size = egui::vec2(self.img.clone().unwrap().size().unwrap().x / self.window_scale, self.img.clone().unwrap().size().unwrap().y / self.window_scale);        
+                let rect = get_centre_rect(ui,image_size);
+                self.img.clone().unwrap().paint_at(ui,rect);
+                if self.acquiring_pen {
+                        self.painting.ui_content(ui,ctx,self.img.clone().unwrap().shrink_to_fit().max_size(image_size));
+
+                }
             });
         }
         
     }
 
-    
+}
+
+fn get_centre_rect(ui: &egui::Ui,image_size: egui::Vec2) -> egui::Rect{
+    let ratio = image_size.x/image_size.y;
+                
+                let mut w = ui.available_width();
+                if w > image_size.x {
+                    w = image_size.x;
+                }
+                let mut h = w / ratio;
+                if h > ui.available_height() {
+                    h = ui.available_height();
+                    w = h * ratio;
+                }
+
+                let mut rect = ui.available_rect_before_wrap();
+                //println!("{} {} {} {}",rect.min.x,rect.min.y,rect.max.x,rect.max.y);
+                if rect.width() > w {
+                    rect.min.x += (rect.width() - w) / 2.0;
+                    rect.max.x = rect.min.x + w;
+                }  
+                if rect.height() > h {
+                    rect.min.y += (rect.height() - h) / 2.0;
+                    rect.max.y = rect.min.y + h;
+                }
+                return rect;
 }
 
