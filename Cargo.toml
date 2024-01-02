@@ -6,6 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0.77"
+arboard = "3.3.0"
+chrono = "0.4.31"
 eframe = "0.23.0"
 egui = "0.23.0"
 egui_extras = { version = "*", features = ["all_loaders"] }
