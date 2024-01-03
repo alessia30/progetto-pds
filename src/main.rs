@@ -27,17 +27,18 @@ fn main() -> Result<(), eframe::Error> {
             })
     )
 }
-
 pub struct Painting {
     /// in 0-1 normalized coordinates
-    lines: Vec<Vec<egui::Pos2>>,
+    lines: Vec<(Vec<egui::Pos2>,Stroke)>,
     stroke: Stroke,
+    temp_lines: Vec<(Vec<egui::Pos2>,Stroke)>,
 }
 
 impl Default for Painting {
     fn default() -> Self {
         Self {
             lines: Default::default(),
+            temp_lines: Default::default(),
             stroke: Stroke::new(1.0, Color32::from_rgb(25, 200, 100)),
         }
     }
@@ -46,9 +47,11 @@ impl Default for Painting {
 pub fn my_stroke_ui(ui: &mut crate::egui::Ui, stroke: &mut egui::epaint::Stroke, text: &str) {
     let egui::epaint::Stroke { width, color } = stroke;
     ui.vertical(|ui| {
+        ui.add_space(10.0);
         ui.add(egui::DragValue::new(width).speed(0.1).clamp_range(0.0..=5.0))
             .on_hover_text("Width");
-        //ui.add(egui::color_picker::color_edit_button_srgba(color));
+        ui.add_space(10.0);
+        ui.color_edit_button_srgba(color);
         ui.label(text);
         // stroke preview:
         let (_id, stroke_rect) = ui.allocate_space(ui.spacing().interact_size);
@@ -61,56 +64,73 @@ pub fn my_stroke_ui(ui: &mut crate::egui::Ui, stroke: &mut egui::epaint::Stroke,
 impl Painting {
     pub fn ui_control(&mut self, ui: &mut egui::Ui) {
             my_stroke_ui(ui, &mut self.stroke, "Stroke");
+            ui.add_space(10.0);
             ui.separator();
+            ui.add_space(5.0);
             if ui.button("Clear").clicked() {
                 self.lines.clear();
             }
+            ui.add_space(10.0);
+            if ui.add_enabled(!self.lines.is_empty(), egui::Button::new("indietro")).clicked() {
+                println!(" lines: {}", self.lines.len());
+                let _ =self.lines.pop();
+                if let Some(line) = self.lines.pop() {
+                    println!(" lines: {}", self.lines.len());
+                    self.temp_lines.push(line);
+                    println!("Temp lines: {}", self.temp_lines.len());
+                }
+            }
+            ui.add_space(10.0);
+            if ui.add_enabled(self.temp_lines.len() > 0, egui::Button::new("avanti")).clicked() {
+                println!(" lines: {}", self.lines.len());
+                self.lines.push(self.temp_lines.pop().unwrap());
+                println!("Temp lines: {}", self.temp_lines.len());
+            }
+
         
     }
 
-    pub fn ui_content(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,img: egui::Image)-> egui::Response {
+    pub fn ui_content(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,rect: egui::Rect)-> egui::Response {
         
-        let (mut response, mut painter) =
-            ui.allocate_painter(ui.min_size(), egui::Sense::drag());
-       
-       
-        println!("{} {}",ui.min_size().x,ui.min_size().y);
+        let (mut response, painter) = ui.allocate_painter(ui.min_size(), egui::Sense::drag());
         let to_screen = egui::emath::RectTransform::from_to(
-            Rect::from_min_size(egui::Pos2::ZERO, response.rect.square_proportions()),
-            response.rect,
+            Rect::from_min_size(egui::Pos2::ZERO, rect.square_proportions()),
+            rect,
         );
         let from_screen = to_screen.inverse();
-        println!("{} {}",response.rect.max.x,response.rect.max.y);
+
         if self.lines.is_empty() {
-            self.lines.push(vec![]);
+            self.lines.push((vec![], self.stroke.clone()));
         }
 
         let current_line = self.lines.last_mut().unwrap();
 
         if let Some(pointer_pos) = response.interact_pointer_pos() {
             let canvas_pos = from_screen * pointer_pos;
-            if current_line.last() != Some(&canvas_pos) {
-                current_line.push(canvas_pos);
+            if current_line.0.last() != Some(&canvas_pos) {
+                current_line.0.push(canvas_pos);
+                current_line.1 = self.stroke.clone();
                 response.mark_changed();
             }
-        } else if !current_line.is_empty() {
-            self.lines.push(vec![]);
+        } else if !current_line.0.is_empty() {
+            self.lines.push((vec![], self.stroke.clone()));
             response.mark_changed();
         }
 
+        // Disegna le linee
         let shapes = self
-            .lines
-            .iter()
-            .filter(|line| line.len() >= 2)
-            .map(|line| {
-                let points: Vec<egui::Pos2> = line.iter().map(|p| to_screen * *p).collect();
-                egui::Shape::line(points, self.stroke)
-            });
+                .lines
+                .iter()
+                .filter(|(line, _)| line.len() >= 2)
+                .map(|(line, stroke)| {
+                    let points: Vec<egui::Pos2> = line.iter().map(|p| to_screen * *p).collect();
+                    egui::Shape::line(points, *stroke)
+                });
 
-        painter.extend(shapes);
+            painter.extend(shapes);
 
         response
-    }
+        }
 }
 
 struct MyApp<'a>{
@@ -143,6 +163,18 @@ impl MyApp<'_>{
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
         // for e.g. egui::PaintCallback.
+        let new_style = egui::style::WidgetVisuals {
+            weak_bg_fill: egui::Color32::from_rgb(0x29, 0x29, 0x29),
+            bg_fill: egui::Color32::from_rgb(0x29, 0x29, 0x29),
+            bg_stroke: Stroke { width: 1., color: egui::Color32::from_rgb(0x29, 0x29, 0x29) },
+            rounding: egui::Rounding { nw: 2., ne: 2., sw: 2., se: 2. },
+            fg_stroke: Stroke{ width: 1., color: egui::Color32::WHITE} ,
+            expansion: 4.,
+        };
+        cc.egui_ctx.set_visuals(egui::style::Visuals { widgets: egui::style::Widgets { 
+                noninteractive: new_style, inactive: new_style, hovered: new_style, active: new_style, open: new_style
+            }, ..Default::default()});
+
         Self{acquiring:false,acquired:false,color_image:None,img:None,handle:None,window_scale:0.0,counter:0,
             my_shortcut:KeyboardShortcut {
                 modifiers: Modifiers::default(), // Imposta i modificatori desiderati
@@ -162,24 +194,11 @@ impl MyApp<'_>{
     fn top_panel(&mut self, ctx: &egui::Context,frame: &mut eframe::Frame){
         egui::TopBottomPanel::top("my_panel").exact_height(40.0).show(ctx, |ui| {        
             ui.horizontal_centered(|ui| {
-                
-                let new_style = egui::style::WidgetVisuals {
-                    weak_bg_fill: egui::Color32::from_rgb(0x29, 0x29, 0x29),
-                    bg_fill: egui::Color32::from_rgb(0x29, 0x29, 0x29),
-                    bg_stroke: Stroke { width: 1., color: egui::Color32::from_rgb(0x29, 0x29, 0x29) },
-                    rounding: egui::Rounding { nw: 2., ne: 2., sw: 2., se: 2. },
-                    fg_stroke: Stroke{ width: 1., color: egui::Color32::WHITE} ,
-                    expansion: 4.,
-          };
-          
-           ctx.set_visuals(egui::style::Visuals { widgets: egui::style::Widgets { 
-                    noninteractive: new_style, inactive: new_style, hovered: new_style, active: new_style, open: new_style
-          }, ..Default::default()});
                 if ui.add(egui::Button::new(egui::RichText::new("\u{2795} Nuovo").size(14.0))).on_hover_text("Nuova Cattura").clicked() {
-                    self.acquiring=true;
+                    self.acquiring = true;
+                    self.acquiring_pen = false;
                     //print!("pulsante premuto");                                
-                    frame.set_visible(false);                  
-                                                      
+                    frame.set_visible(false);                                               
                 }
                 ui.add_space(10.0);
                 let screens = Screen::all().unwrap();
@@ -302,10 +321,10 @@ impl eframe::App for MyApp<'_>{
             });
         }
         if self.acquiring{
-            self.counter+=1;
+            self.counter += 1;
             //print!("{}",self.counter);            
             ctx.request_repaint();
-            if self.counter==20{
+            if self.counter == 20{
                 let screens = Screen::all().unwrap(); 
                 let screen = screens[self.screen-1];  
                 self.acquired=false;
@@ -397,7 +416,7 @@ impl eframe::App for MyApp<'_>{
                 let rect = get_centre_rect(ui,image_size);
                 self.img.clone().unwrap().paint_at(ui,rect);
                 if self.acquiring_pen {
-                        self.painting.ui_content(ui,ctx,self.img.clone().unwrap().shrink_to_fit().max_size(image_size));
+                        self.painting.ui_content(ui,ctx,rect);
 
                 }
             });
@@ -407,29 +426,28 @@ impl eframe::App for MyApp<'_>{
 
 }
 
-fn get_centre_rect(ui: &egui::Ui,image_size: egui::Vec2) -> egui::Rect{
+fn get_centre_rect(ui: &egui::Ui,image_size: egui::Vec2) -> egui::Rect {
     let ratio = image_size.x/image_size.y;
-                
-                let mut w = ui.available_width();
-                if w > image_size.x {
-                    w = image_size.x;
-                }
-                let mut h = w / ratio;
-                if h > ui.available_height() {
-                    h = ui.available_height();
-                    w = h * ratio;
-                }
+    let mut w = ui.available_width();
+    if w > image_size.x {
+        w = image_size.x;
+    }
+    let mut h = w / ratio;
+    if h > ui.available_height() {
+        h = ui.available_height();
+        w = h * ratio;
+    }
 
-                let mut rect = ui.available_rect_before_wrap();
-                //println!("{} {} {} {}",rect.min.x,rect.min.y,rect.max.x,rect.max.y);
-                if rect.width() > w {
-                    rect.min.x += (rect.width() - w) / 2.0;
-                    rect.max.x = rect.min.x + w;
-                }  
-                if rect.height() > h {
-                    rect.min.y += (rect.height() - h) / 2.0;
-                    rect.max.y = rect.min.y + h;
-                }
-                return rect;
+    let mut rect = ui.available_rect_before_wrap();
+    //println!("{} {} {} {}",rect.min.x,rect.min.y,rect.max.x,rect.max.y);
+    if rect.width() > w {
+        rect.min.x += (rect.width() - w) / 2.0;
+        rect.max.x = rect.min.x + w;
+    }  
+    if rect.height() > h {
+        rect.min.y += (rect.height() - h) / 2.0;
+        rect.max.y = rect.min.y + h;
+    }
+    return rect;
 }
 
