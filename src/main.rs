@@ -67,7 +67,7 @@ struct MyApp<'a>{
     start_pos:Option<egui::Pos2>,
     current_pos:Option<egui::Pos2>,
     end_pos: Option<egui::Pos2>,
-    drag_pos: Pos2,
+    center_pos: Option<egui::Pos2>,
     status: Status,
     is_cropping: bool,
     cropped: bool,
@@ -93,8 +93,8 @@ impl MyApp<'_>{
             },
             captures:vec!["Rettangolo", "Schermo intero", "Finestra","Mano libera"],
             delays:vec!["Nessun ritardo", "3 secondi", "5 secondi","10 secondi"],
-            capture:0,delay:0,is_mac:true,is_shortcut_modal_open:false,start_pos:None,current_pos:None, end_pos:None, drag_pos: pos2(0.0, 0.0),
-            status: Status::None, is_cropping:false, cropped: false, image_sz: egui::vec2(0.0, 0.0), selected_area: None,
+            capture:0,delay:0,is_mac:true,is_shortcut_modal_open:false,start_pos:None,current_pos:None, end_pos:None,
+            center_pos: None, status: Status::None, is_cropping:false, cropped: false, image_sz: egui::vec2(0.0, 0.0), selected_area: None,
             temp_image:None,
         }
     }
@@ -105,10 +105,6 @@ impl MyApp<'_>{
 
     fn get_status (&self) -> Status {
         self.status
-    }
-
-    pub fn get_temp_image(&self) -> Option<ColorImage> {
-        self.temp_image.clone()
     }
 
     fn set_selected_area(&mut self, new_area: Option<Rect>) {
@@ -122,119 +118,6 @@ impl MyApp<'_>{
     pub fn set_temp_image(&mut self, new_image: Option<ColorImage>) {
         self.color_image = new_image.clone();
         self.temp_image = new_image.clone();
-    }
-
-    fn get_position(&mut self, ctx: &Context, rect: Rect) -> Option<Pos2> {
-        let pointer = ctx.input(|i| i.pointer.interact_pos())?;
-        let side_grab_radius = ctx.style().interaction.resize_grab_radius_side;
-        let corner_grab_radius = ctx.style().interaction.resize_grab_radius_corner;
-                            
-        if (rect.left() - pointer.x).abs() <= side_grab_radius {self.status=Status::MidLeft;}
-        if (rect.right() - pointer.x).abs() <= side_grab_radius {self.status=Status::MidRight;}
-        if (rect.top() - pointer.y) <= side_grab_radius {self.status=Status::TopMid;}
-        if (rect.bottom() - pointer.y) <= side_grab_radius {self.status=Status::BotMid;}
-
-        if rect.right_bottom().distance(pointer) < corner_grab_radius {self.status=Status::BotRight}
-        if rect.right_top().distance(pointer) < corner_grab_radius {self.status=Status::TopRight;}
-        if rect.left_top().distance(pointer) < corner_grab_radius {self.status=Status::TopLeft;}
-        if rect.left_bottom().distance(pointer) < corner_grab_radius {self.status=Status::BotLeft;}
-        return Some(pointer);
-                            
-    }
-
-    fn crop_screen (&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-            let window_size = _frame.info().window_info.size;
-            let mut painter = ctx.layer_painter(LayerId::background());
-            let image = RetainedImage::from_color_image(
-                "Preview Image",
-                self.get_temp_image().expect("Image must be defined"),
-            );
-
-            // painter.set_clip_rect(Rect::from_min_size(pos2(0.0, 0.0), window_size));
-            painter.image(
-                image.texture_id(ctx),
-                Rect::from_min_size(pos2(0.0, 0.0), self.image_sz),
-                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-                Color32::WHITE,
-            );
-
-            self.show_selected_area(ctx, _frame, &mut painter);
-
-            if ctx.pointer_hover_pos().is_some()
-            //         && !(save_rect.contains(ctx.pointer_hover_pos().unwrap())
-            //             || cancel_rect.contains(ctx.pointer_hover_pos().unwrap()))
-                {
-                    self.select_area(ctx, _frame);
-                }
-
-
-        
-    }
-
-    fn select_area (&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-        println!("select_area");
-        if ctx.input(|i| i.pointer.primary_released())
-            && self.get_status() == Status::Select
-        {
-            self.set_status(Status::None);
-        }
-        //Otherwhise start the selection, if it is not started and a mouse pression is detected, or continue it until the mouse is released
-        else if ctx.input(|i| i.pointer.primary_down())
-            && (self.get_status() == Status::Select
-                || self.get_status() == Status::None)
-        {
-            self.set_status(Status::Select);
-
-            //Get drag initial and actual position
-            let mut init_pos = ctx.input(|i| {
-                i.pointer
-                    .press_origin()
-                    .expect("Press origin must be defined")
-            });
-            let mut drag_pos = ctx
-                .pointer_hover_pos()
-                .expect("Hover position must be some");
-
-            //Update the saved area
-            if init_pos != drag_pos {
-                (init_pos, drag_pos) =
-                    self.check_coordinates(init_pos, drag_pos, _frame.info().window_info.size);
-                    println!("check coord: {:?}", self.check_coordinates(init_pos, drag_pos, _frame.info().window_info.size));
-                self.set_selected_area(Some(Rect::from_min_max(init_pos, drag_pos)));
-            }
-        }
-    }
-
-    fn show_selected_area(&mut self, ctx: &Context, _frame: &mut eframe::Frame, painter: &mut Painter) {
-        let window_size = _frame.info().window_info.size;
-
-        match self.get_selected_area() {
-            Some(sel) => {
-                println!("selected area: {:?}", sel);
-                        let min = sel.min;
-                        let max = sel.max;
-        
-                        // let min_x = min.x;
-                        // let max_x = max.x;
-                        // let min_y = min.y;
-                        // let max_y = max.y;
-        
-                        //Draw the overlay only on the screen parts that are not selected. Achieved using 4 rectangles
-                        painter.rect_filled(
-                            Rect::from_min_max(min, max),
-                            0.0,
-                            Color32::from_white_alpha(100),
-                        );
-
-                        self.scale_selection(ctx, _frame, painter);
-
-            }
-            None => painter.rect_filled(
-                Rect::from_min_size(pos2(0.0, 0.0), window_size), 
-                0.0,
-                Color32::from_black_alpha(100)),
-        }
-
     }
 
     fn scale_selection(&mut self, ctx: &Context, _frame: &mut eframe::Frame, painter: &mut Painter) {
@@ -308,7 +191,7 @@ impl MyApp<'_>{
                     
                     if new_status != Status::None {
                         print!("update area\n");
-                        self.update_area(ctx, _frame, pos, new_status);
+                        self.update_area(ctx, _frame, pos, new_status, painter);
                     }
 
                 }
@@ -318,7 +201,7 @@ impl MyApp<'_>{
         }
      }
 
-    fn update_area (&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, pos: Pos2, status: Status) {
+    fn update_area (&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, pos: Pos2, status: Status, painter: &mut Painter) {
         let sel = self.get_selected_area().expect("Selected area must be some when updating it");
         let mut new_min = sel.min;
         let mut new_max = sel.max;
@@ -350,18 +233,18 @@ impl MyApp<'_>{
                         match ctx.memory(|mem| mem.data.get_temp(Id::from("center_dist"))) {
                             Some(distance) => distance,
                             None => {
+                                self.center_pos=Some(sel.center());
                                 let start_coord = ctx.pointer_interact_pos()
                                 .expect("Pointer position must be found")
                                 .to_vec2();
                                 
-                                let distance = start_coord - sel.center().to_vec2();
+                                let distance = start_coord - self.center_pos.unwrap().to_vec2();
                                 ctx.memory_mut(|mem| {
                                     mem.data.insert_temp(Id::from("center_dist"), distance)
                                 });
                                 distance
                             }
                         };
-                    println!("center distance: {:?}", center_distance); 
                     
                     //update center
                     let mut new_center = pos2(pos.x - center_distance.x, pos.y - center_distance.y);
@@ -372,11 +255,14 @@ impl MyApp<'_>{
                         let window_size = _frame.info().window_info.size;
 
                         new_center = new_center.clamp((size/2.).to_pos2(), (window_size.to_pos2() - pos2(size[0]/2. , size[1]/2.)).to_pos2());
-                        println!("new center: {:?}", new_center);
                     }
-
+                    
                     //update area with new center
-                    self.set_selected_area(Some(Rect::from_center_size(new_center, sel.size())));
+                    let rect = Rect::from_center_size(new_center, sel.size());
+                    self.center_pos = Some(new_center);
+                    self.start_pos=Some(rect.min);
+                    self.end_pos=Some(rect.max);
+                    self.set_selected_area(Some(rect));
                 }
                     
             }
@@ -384,7 +270,10 @@ impl MyApp<'_>{
             if self.get_status() != Status::Move {
                 (new_min, new_max) = 
                     self.check_coordinates(new_min, new_max, _frame.info().window_info.size);
+                self.start_pos=Some(new_max);
+                self.end_pos=Some(new_min);
                 self.set_selected_area(Some(Rect::from_min_max(new_min, new_max)));
+                        
             }
         }
         //mouse released, reset status and used values
@@ -443,6 +332,7 @@ impl MyApp<'_>{
         }
 
         self.set_status(status);
+        // println!("init end pos: {:?}, {:?}", init_pos, end_pos);
         (init_pos, end_pos)
 
     }
@@ -459,6 +349,7 @@ impl eframe::App for MyApp<'_>{
                 ui.horizontal(|ui| {
                     if ui.button("\u{2795} Nuovo").on_hover_text("Nuova Cattura").clicked() {
                         self.acquiring=true;
+                        self.is_cropping=false;
                         //print!("pulsante premuto")      ;                                
                         frame.set_visible(false);                  
                                                            
@@ -645,24 +536,72 @@ impl eframe::App for MyApp<'_>{
                     }
 
                     if self.is_cropping {
-                        ui.add_space(100.0);
-                        if ui.button("Salva").clicked() {
+                        let mut pressed = false;
+                        ui.with_layer_id(
+                            LayerId::new(egui::Order::Foreground, Id::from("Save")),
+                            |ui| {
+                                ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
+                                    let save = ui.add_sized([20., 10.], Button::new("Save"));
+                                    let cancel = ui.add_sized([20., 10.], Button::new("Cancel"));
 
-                            let rect = self.get_selected_area().unwrap();
-                            let pixels_per_point = frame.info().native_pixels_per_point;
-                            self.color_image=Some(self.color_image.clone().unwrap().region(&rect, pixels_per_point));
-                            self.handle= Some(ctx.load_texture("handle", self.color_image.clone().unwrap(),egui::TextureOptions::LINEAR));
-                            let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
-                            self.img = Some(egui::Image::from_texture(sized_image));
-                            self.window_scale=self.img.clone().unwrap().size().unwrap().x/(rect.max.x-rect.min.x);
-                            self.is_cropping=false;
-                            frame.set_fullscreen(false);                 
+                                    let save_rect = save.rect;
+                                    let cancel_rect = cancel.rect;
+
+                                    let pointer_pos = ctx.pointer_hover_pos();
+
+                                    if pointer_pos.is_some() {
+                                        if save_rect.contains(pointer_pos.unwrap()) {
+                                            ctx.set_cursor_icon(CursorIcon::PointingHand);
+                                            save.highlight();
+                                            
+                                            if ctx.input(|i| i.pointer.primary_clicked()) {
+                                                if self.get_selected_area().is_some() {
+                                                    // let im = self.get_temp_image().unwrap().region(&self.get_selected_area().unwrap(), None);
+                                                    // self.color_image=Some(im);
+                                                    let rect = self.get_selected_area().unwrap();
+                                                    // let window_pos = frame.info().window_info.position.unwrap();
+                                                    let pixels_per_point = frame.info().native_pixels_per_point;
+                                                    self.color_image=Some(self.color_image.clone().unwrap().region(&rect, pixels_per_point));
+                                                    self.handle= Some(ctx.load_texture("handle", self.color_image.clone().unwrap(),egui::TextureOptions::LINEAR));
+                                                    let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
+                                                    self.img = Some(egui::Image::from_texture(sized_image));
+                                                    self.window_scale=self.img.clone().unwrap().size().unwrap().x/(rect.max.x-rect.min.x);
+                                                }
+
+                                                //save in memory in case of cancel
+                                                ctx.memory_mut(|mem| {
+                                                    mem.data.insert_temp(Id::from("Prev_area"), self.get_selected_area());
+                                                });
+                                                pressed = true; 
+                                            }
+                                        }
+                                        else if cancel_rect.contains(pointer_pos.unwrap()) {
+                                            ctx.set_cursor_icon(CursorIcon::PointingHand);
+                                            cancel.highlight();
+
+                                            if ctx.input(|i| i.pointer.primary_clicked()) {
+                                                let prev_area = ctx.memory_mut(|mem| {
+                                                    mem.data.get_temp::<Option<Rect>>(Id::from("Prev_area"))
+                                                }).unwrap_or_else(|| {None});
+
+                                                self.set_selected_area(prev_area);
+                                                pressed = true;
+                                            }
+
+                                        }
+
+                                    }
+                                })
+                            }
+
+                        );
+
+                        if pressed {
+                            ctx.request_repaint();
+                            self.is_cropping = false; 
+                            self.cropped = false;
                         }
-                        
-                        ui.add_space(10.0);
-                        if ui.button("Cancella").on_hover_text("Nuova Cattura").clicked() {
-                            self.is_cropping=false;                        
-                        }
+
                     }
                 
                 });
@@ -672,12 +611,13 @@ impl eframe::App for MyApp<'_>{
                 self.image_sz = egui::vec2(self.img.clone().unwrap().size().unwrap().x / self.window_scale, self.img.clone().unwrap().size().unwrap().y / self.window_scale);      
                 let mut pos_1 = Pos2::new(0.0, 0.0);
                 let mut pos_2 = Pos2::new(0.0, 0.0);
-            
+                
                 ui.centered_and_justified(|ui|{
-                        let image_captured = ui.add(self.img.clone().unwrap().shrink_to_fit().max_size(self.image_sz));
-                        pos_1 = image_captured.rect.left_top();
-                        pos_2 = image_captured.rect.right_bottom();
-                        self.set_selected_area(Some(Rect::from_two_pos(pos_1, pos_2)));
+                    let image_captured = ui.add(self.img.clone().unwrap().shrink_to_fit().max_size(self.image_sz));
+                    pos_1 = image_captured.rect.left_top();
+                    pos_2 = image_captured.rect.right_bottom();
+                    self.set_selected_area(Some(Rect::from_two_pos(pos_1, pos_2)));
+                    
                 });
 
                 if self.is_cropping {
@@ -688,13 +628,14 @@ impl eframe::App for MyApp<'_>{
                     .movable(false)
                     .constraint_to(Rect::from_min_max(pos_1, pos_2))
                     .show(ctx, |ui| {
- 
+                    
+
                     let (response, mut painter) = ui.allocate_painter(self.image_sz,egui::Sense::click_and_drag() );                    
                     println!("painter");
                     println!("selection: {:?}", self.selected_area);
-                    
+
                     painter.rect_filled(ctx.screen_rect(), Rounding::ZERO, Color32::from_rgba_premultiplied(0, 0, 0, 130));
-                    println!("painter rect");
+                    
                     
                     if !self.cropped {
                         ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
@@ -715,47 +656,15 @@ impl eframe::App for MyApp<'_>{
                             ctx.set_cursor_icon(egui::CursorIcon::Default);
                             self.cropped=true;
                         }
-
+                        
                     }
-
+                    
                     if self.cropped { 
                         self.set_selected_area(Some(Rect::from_two_pos(self.start_pos.unwrap(), self.end_pos.unwrap())));
                         print!("new selection: {:?}", self.selected_area);
-                        // let rect = Rect::from_two_pos(self.start_pos.unwrap(), self.end_pos.unwrap());
-                        // let Rect {min, max } = rect;
-                        let sel = self.get_selected_area().expect("Selected area must be some when updating it");
-                        let mut new_min = sel.min;
-                        let mut new_max = sel.max;
-                        painter.rect(Rect::from_two_pos(new_min, new_max), Rounding::ZERO,  Color32::from_rgba_premultiplied(30, 30, 30, 30),Stroke::new(2.0, Color32::WHITE) );
-                        self.scale_selection(ctx, frame, &mut painter);
-                        print!("updated area: {:?}", self.selected_area);
-
-                        if ctx.pointer_hover_pos().is_some()
-                        // && !(save_rect.contains(ctx.pointer_hover_pos().unwrap())
-                        // || cancel_rect.contains(ctx.pointer_hover_pos().unwrap()))
-                        {
-                            self.select_area(ctx, frame);
-                        }
-
-    
-                            // let rounding = ui.visuals().window_rounding;
-                            // let mut points = Vec::new();
-                            // if self.status == Status::MidRight {
-                            //     min = min.y + rounding.ne;
-                            //     points.push(pos2(max.x, max.y - rounding.se));
-                            // }
-
-                            // if self.status == Status::TopMid {
-                            //     points.push(pos2(min.x + rounding.nw, min.y));
-                            //     points.push(pos2(max.x - rounding.ne, min.y));
-                            // }
-                            
-                    
+                        painter.rect(self.selected_area.unwrap(), Rounding::ZERO,  Color32::from_rgba_premultiplied(30, 30, 30, 30),Stroke::new(2.0, Color32::WHITE) );
+                        self.scale_selection(ctx, frame, &mut painter);         
                     }
-
-
-                
-
                 });
 
 
