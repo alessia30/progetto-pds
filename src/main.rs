@@ -1,19 +1,137 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::{egui, App, WindowInfo};
-use eframe::egui_glow::painter;
-use egui_extras::syntax_highlighting::highlight;
-use image::imageops::crop_imm;
-use std::sync::mpsc;
-use std::thread::{JoinHandle, Thread};
+use eframe::egui;
 use screenshots::Screen;
 use std::time::{Duration, SystemTime};
 use std::thread::sleep;
 use image::EncodableLayout;
-use egui_extras::RetainedImage;
-use egui::{ Key, Modifiers, ModifierNames, KeyboardShortcut, Order, PointerButton, RawInput, Vec2, Widget, Rect, Rounding, Color32, Stroke, Pos2, LayerId, CursorIcon, Id, Layout, Button, Context, pos2, Painter, CentralPanel, ColorImage, Shape };
+use egui::{ Key, Modifiers, ModifierNames, KeyboardShortcut, Order, PointerButton, RawInput, Vec2, Widget, Rect, Rounding, Color32, Stroke, pos2, CursorIcon, Id, Context, Painter, LayerId, Pos2 };
 
 static DELAYS_VALUES:[u64;4]=[0,3,5,10];
+
+fn main() -> Result<(), eframe::Error> {
+
+    let options = eframe::NativeOptions {
+        initial_window_size: Some(egui::vec2(500.0, 240.0)),
+        centered: true,
+        min_window_size: Some(egui::vec2(500.0, 240.0)),
+        ..Default::default()
+    };
+
+    eframe::run_native(
+        "screen capture",
+        options,
+        Box::new(|cc|{
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+            Box::new(MyApp::new(cc))
+            })
+    )
+}
+pub struct Painting {
+    /// in 0-1 normalized coordinates
+    lines: Vec<(Vec<egui::Pos2>,Stroke)>,
+    stroke: Stroke,
+    temp_lines: Vec<(Vec<egui::Pos2>,Stroke)>,
+}
+
+impl Default for Painting {
+    fn default() -> Self {
+        Self {
+            lines: Default::default(),
+            temp_lines: Default::default(),
+            stroke: Stroke::new(1.0, Color32::from_rgb(25, 200, 100)),
+        }
+    }
+}
+
+pub fn my_stroke_ui(ui: &mut crate::egui::Ui, stroke: &mut egui::epaint::Stroke, text: &str) {
+    let egui::epaint::Stroke { width, color } = stroke;
+    ui.vertical(|ui| {
+        ui.add_space(10.0);
+        ui.add(egui::DragValue::new(width).speed(0.1).clamp_range(0.0..=5.0))
+            .on_hover_text("Width");
+        ui.add_space(10.0);
+        ui.color_edit_button_srgba(color);
+        ui.label(text);
+        // stroke preview:
+        let (_id, stroke_rect) = ui.allocate_space(ui.spacing().interact_size);
+        let left = stroke_rect.left_center();
+        let right = stroke_rect.right_center();
+        ui.painter().line_segment([left, right], (*width, *color));
+    });
+}
+
+impl Painting {
+    pub fn ui_control(&mut self, ui: &mut egui::Ui) {
+            my_stroke_ui(ui, &mut self.stroke, "Stroke");
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(5.0);
+            if ui.button("Clear").clicked() {
+                self.lines.clear();
+            }
+            ui.add_space(10.0);
+            if ui.add_enabled(!self.lines.is_empty(), egui::Button::new("indietro")).clicked() {
+                println!(" lines: {}", self.lines.len());
+                let _ =self.lines.pop();
+                if let Some(line) = self.lines.pop() {
+                    println!(" lines: {}", self.lines.len());
+                    self.temp_lines.push(line);
+                    println!("Temp lines: {}", self.temp_lines.len());
+                }
+            }
+            ui.add_space(10.0);
+            if ui.add_enabled(self.temp_lines.len() > 0, egui::Button::new("avanti")).clicked() {
+                println!(" lines: {}", self.lines.len());
+                self.lines.push(self.temp_lines.pop().unwrap());
+                println!("Temp lines: {}", self.temp_lines.len());
+            }
+
+        
+    }
+
+    pub fn ui_content(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,rect: egui::Rect)-> egui::Response {
+        
+        let (mut response, painter) = ui.allocate_painter(ui.min_size(), egui::Sense::drag());
+        let to_screen = egui::emath::RectTransform::from_to(
+            Rect::from_min_size(egui::Pos2::ZERO, rect.square_proportions()),
+            rect,
+        );
+        let from_screen = to_screen.inverse();
+
+        if self.lines.is_empty() {
+            self.lines.push((vec![], self.stroke.clone()));
+        }
+
+        let current_line = self.lines.last_mut().unwrap();
+
+        if let Some(pointer_pos) = response.interact_pointer_pos() {
+            let canvas_pos = from_screen * pointer_pos;
+            if current_line.0.last() != Some(&canvas_pos) {
+                current_line.0.push(canvas_pos);
+                current_line.1 = self.stroke.clone();
+                response.mark_changed();
+            }
+        } else if !current_line.0.is_empty() {
+            self.lines.push((vec![], self.stroke.clone()));
+            response.mark_changed();
+        }
+
+        // Disegna le linee
+        let shapes = self
+                .lines
+                .iter()
+                .filter(|(line, _)| line.len() >= 2)
+                .map(|(line, stroke)| {
+                    let points: Vec<egui::Pos2> = line.iter().map(|p| to_screen * *p).collect();
+                    egui::Shape::line(points, *stroke)
+                });
+
+            painter.extend(shapes);
+
+        response
+        }
+}
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Status {
@@ -28,24 +146,6 @@ pub enum Status {
     BotMid,
     BotRight,
     Move,
-}
-
-
-fn main() -> Result<(), eframe::Error> {
-
-    let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::vec2(400.0, 240.0)),
-        ..Default::default()
-    };
-
-    eframe::run_native(
-        "screen capture",
-        options,
-        Box::new(|cc|{
-            egui_extras::install_image_loaders(&cc.egui_ctx);
-            Box::new(MyApp::new(cc))
-            })
-    )
 }
 
 struct MyApp<'a>{
@@ -66,22 +166,37 @@ struct MyApp<'a>{
     is_shortcut_modal_open:bool,
     start_pos:Option<egui::Pos2>,
     current_pos:Option<egui::Pos2>,
-    end_pos: Option<egui::Pos2>,
-    center_pos: Option<egui::Pos2>,
-    status: Status,
+    end_pos:Option<egui::Pos2>,
+    center_pos:Option<egui::Pos2>,
+    screen:usize,
+    painting:Painting,
+    acquiring_pen:bool,
     is_cropping: bool,
     cropped: bool,
-    image_sz: Vec2,
-    selected_area: Option<Rect>,
-    temp_image:Option<ColorImage>,
+    selected_area:Option<Rect>,
+    status: Status,
+    image_size: Vec2,
 }
 
 impl MyApp<'_>{
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
         // for e.g. egui::PaintCallback.
+        let new_style = egui::style::WidgetVisuals {
+            weak_bg_fill: egui::Color32::from_rgb(0x29, 0x29, 0x29),
+            bg_fill: egui::Color32::from_rgb(0x29, 0x29, 0x29),
+            bg_stroke: Stroke { width: 1., color: egui::Color32::from_rgb(0x29, 0x29, 0x29) },
+            rounding: egui::Rounding { nw: 2., ne: 2., sw: 2., se: 2. },
+            fg_stroke: Stroke{ width: 1., color: egui::Color32::WHITE} ,
+            expansion: 4.,
+        };
+        cc.egui_ctx.set_visuals(egui::style::Visuals { widgets: egui::style::Widgets { 
+                noninteractive: new_style, inactive: new_style, hovered: new_style, active: new_style, open: new_style
+            }, ..Default::default()});
+
         Self{acquiring:false,acquired:false,color_image:None,img:None,handle:None,window_scale:0.0,counter:0,
             my_shortcut:KeyboardShortcut {
                 modifiers: Modifiers::default(), // Imposta i modificatori desiderati
@@ -93,10 +208,114 @@ impl MyApp<'_>{
             },
             captures:vec!["Rettangolo", "Schermo intero", "Finestra","Mano libera"],
             delays:vec!["Nessun ritardo", "3 secondi", "5 secondi","10 secondi"],
-            capture:0,delay:0,is_mac:true,is_shortcut_modal_open:false,start_pos:None,current_pos:None, end_pos:None,
-            center_pos: None, status: Status::None, is_cropping:false, cropped: false, image_sz: egui::vec2(0.0, 0.0), selected_area: None,
-            temp_image:None,
+            capture:0,delay:0,is_mac:match cc.egui_ctx.os(){ egui::os::OperatingSystem::Mac => true, _ => false },is_shortcut_modal_open:false,start_pos:None,current_pos:None,
+            end_pos:None, center_pos:None,screen:1,painting:Painting::default(),acquiring_pen:false,is_cropping:false,cropped:false,selected_area:None, status: Status::None, image_size: egui::vec2(0.0,0.0),
         }
+    }
+
+    fn top_panel(&mut self, ctx: &egui::Context,frame: &mut eframe::Frame){
+        egui::TopBottomPanel::top("my_panel").exact_height(40.0).show(ctx, |ui| {        
+            ui.horizontal_centered(|ui| {
+                if ui.add(egui::Button::new(egui::RichText::new("\u{2795} Nuovo").size(14.0))).on_hover_text("Nuova Cattura").clicked() {
+                    self.acquiring = true;
+                    self.acquiring_pen = false;
+                    //print!("pulsante premuto");                                
+                    frame.set_visible(false);                                               
+                }
+                ui.add_space(10.0);
+                let screens = Screen::all().unwrap();
+                egui::ComboBox::from_id_source(3)
+                .width(30.0)
+                .selected_text(egui::RichText::new(self.screen.to_string()).size(14.0))
+                .show_ui(ui, |ui| {
+                    for i in 1..= screens.len() {
+                        ui.selectable_value(&mut self.screen, i, i.to_string());
+                    }
+                }).response.on_hover_text("Schermo di cattura");
+                ui.add_space(60.0);
+                egui::ComboBox::from_id_source(2)
+                    .width(30.0)
+                    .selected_text(egui::RichText::new(self.captures[self.capture]).size(14.0))
+                    .show_ui(ui, |ui| {
+                        for (i, option) in self.captures.iter().enumerate() {
+                            ui.selectable_value(&mut self.capture, i, option.to_string());
+                        }
+                    }).response.on_hover_text("Modalità di cattura");
+                ui.add_space(10.0);
+                egui::ComboBox::from_id_source(1)
+                .width(30.0)
+                .selected_text(egui::RichText::new(self.delays[self.delay]).size(14.0))
+                .show_ui(ui, |ui| {
+                    for (i, option) in self.delays.iter().enumerate() {
+                        ui.selectable_value(&mut self.delay, i, option.to_string());
+                    }
+                }).response.on_hover_text("Ritarda cattura");
+                ui.add_space(20.0);
+                
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Bottone "Modifica Shortcut"
+                    ui.visuals_mut().button_frame = false;
+                    
+                    if ui.add(egui::Button::new(egui::RichText::new("\u{2699}").size(22.0)).frame(false)).on_hover_text("Modifica shortcut").clicked() {
+                        self.is_shortcut_modal_open = true;
+                    }
+                    if self.acquired{
+                        if ui.button(egui::RichText::new("salva").size(14.0)).on_hover_text("").clicked() {
+                            
+                        }
+                    }
+                });
+                
+            });
+    
+             // --- Gestione della window per la modifica della shortcut ---
+            if self.is_shortcut_modal_open {
+                egui::Window::new("Modifica shortcut").resizable(false).anchor(egui::Align2::RIGHT_TOP, egui::vec2(10.0, 45.0)).show(&ctx, |ui| {                     
+                    // Qui puoi rilevare gli eventi di input e aggiornare la variabile key
+                    for event in ui.input(|i| i.events.clone()) {
+                        match event {
+                            egui::Event::Key { modifiers: event_modifiers, key: event_key, pressed, .. } => {
+                                println!("pressed {:}", pressed);
+                                println!("event_modifiers {:?}", event_modifiers);
+                                println!("event_key {:}", event_key.name());
+                                if pressed {
+                                    // Solo se il tasto è stato premuto
+                                    self.new_shortcut.modifiers = event_modifiers;
+                                    self.new_shortcut.key = event_key;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    ui.label(&format!("Hai premuto: {:?}", self.new_shortcut.format(&ModifierNames {
+                        is_short: false,
+                        alt: "Alt",
+                        ctrl: "Ctrl",
+                        shift: "Shift",
+                        mac_cmd: "Cmd",
+                        mac_alt: "Option",
+                        concat: "+",
+                    }, self.is_mac)));
+                    if ui.button("Salva").clicked() {
+                        // Salva le modifiche
+                        self.my_shortcut.modifiers = self.new_shortcut.modifiers;
+                        self.my_shortcut.key = self.new_shortcut.key;
+                        self.is_shortcut_modal_open = false; // Chiudi la finestra
+                    }
+                    
+                    if ui.button("Chiudi").clicked() {
+                        self.is_shortcut_modal_open = false; // Chiudi la finestra
+                    }            
+                });
+            }
+            // Se la shortcut viene premuta... -> da sostituire con l'azione di cattura
+            if ctx.input(|i| i.clone().consume_shortcut(&self.my_shortcut)) {
+            // Esegui azioni basate sulla copia di InputState
+                self.acquiring=true;
+                frame.set_visible(false);
+                println!("Shortcut premuta!");
+            }         
+        });
     }
 
     fn get_selected_area (&self) -> Option<Rect> {
@@ -114,12 +333,8 @@ impl MyApp<'_>{
     fn set_status(&mut self, new_status: Status) {
         self.status = new_status;
     }
-    
-    pub fn set_temp_image(&mut self, new_image: Option<ColorImage>) {
-        self.color_image = new_image.clone();
-        self.temp_image = new_image.clone();
-    }
 
+    
     fn scale_selection(&mut self, ctx: &Context, _frame: &mut eframe::Frame, painter: &mut Painter) {
         let sel = self
         .get_selected_area()
@@ -201,7 +416,7 @@ impl MyApp<'_>{
         }
      }
 
-    fn update_area (&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, pos: Pos2, status: Status, painter: &mut Painter) {
+     fn update_area (&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, pos: Pos2, status: Status, painter: &mut Painter) {
         let sel = self.get_selected_area().expect("Selected area must be some when updating it");
         let mut new_min = sel.min;
         let mut new_max = sel.max;
@@ -285,6 +500,7 @@ impl MyApp<'_>{
         }
     }
 
+
     fn check_coordinates(&mut self, start: Pos2, end: Pos2, window_size: Vec2) -> (Pos2, Pos2) {
         let mut init_pos = start.clamp(pos2(0., 0.), window_size.to_pos2());
         let mut end_pos = end.clamp(pos2(0., 0.), window_size.to_pos2());
@@ -339,100 +555,15 @@ impl MyApp<'_>{
 
 }
 
-
-
-
 impl eframe::App for MyApp<'_>{
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame){   
+        fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame){  
         if !self.acquiring && !self.acquired{
-            egui::TopBottomPanel::top("my_panel").show(ctx, |ui| {              
-                ui.horizontal(|ui| {
-                    if ui.button("\u{2795} Nuovo").on_hover_text("Nuova Cattura").clicked() {
-                        self.acquiring=true;
-                        self.is_cropping=false;
-                        //print!("pulsante premuto")      ;                                
-                        frame.set_visible(false);                  
-                                                           
-                    }
-                    ui.add_space(60.0);
-                    egui::ComboBox::from_id_source(2)
-                        .width(30.0)
-                        .selected_text(self.captures[self.capture])
-                        .show_ui(ui, |ui| {
-                            for (i, option) in self.captures.iter().enumerate() {
-                                ui.selectable_value(&mut self.capture, i, option.to_string());
-                            }
-                        }).response.on_hover_text("Modalità di cattura");
-                    ui.add_space(10.0);
-                    egui::ComboBox::from_id_source(1)
-                    .width(30.0)
-                    .selected_text(self.delays[self.delay])
-                    .show_ui(ui, |ui| {
-                        for (i, option) in self.delays.iter().enumerate() {
-                            ui.selectable_value(&mut self.delay, i, option.to_string());
-                        }
-                    }).response.on_hover_text("Ritarda cattura");
-                    ui.add_space(20.0);
-                    
-                    // Bottone "Modifica Shortcut"
-                    if ui.button("\u{2699}").on_hover_text("Modifica shortcut").clicked() {
-                        self.is_shortcut_modal_open = true;
-                    }
-                });
-
-                 // --- Gestione della window per la modifica della shortcut ---
-                if self.is_shortcut_modal_open {
-                    egui::Window::new("Modifica shortcut").show(&ctx, |ui| {                     
-                        // Qui puoi rilevare gli eventi di input e aggiornare la variabile key
-                        for event in ui.input(|i| i.events.clone()) {
-                            match event {
-                                egui::Event::Key { modifiers: event_modifiers, key: event_key, pressed, .. } => {
-                                    println!("pressed {:}", pressed);
-                                    println!("event_modifiers {:?}", event_modifiers);
-                                    println!("event_key {:}", event_key.name());
-                                    if pressed {
-                                        // Solo se il tasto è stato premuto
-                                        self.new_shortcut.modifiers = event_modifiers;
-                                        self.new_shortcut.key = event_key;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        ui.label(&format!("Hai premuto: {:?}", self.new_shortcut.format(&ModifierNames {
-                            is_short: false,
-                            alt: "Alt",
-                            ctrl: "Ctrl",
-                            shift: "Shift",
-                            mac_cmd: "Cmd",
-                            mac_alt: "Option",
-                            concat: "+",
-                        }, self.is_mac)));
-                        if ui.button("Salva").clicked() {
-                            // Salva le modifiche
-                            self.my_shortcut.modifiers = self.new_shortcut.modifiers;
-                            self.my_shortcut.key = self.new_shortcut.key;
-                            self.is_shortcut_modal_open = false; // Chiudi la finestra
-                        }
-                        
-                        if ui.button("Chiudi").clicked() {
-                            self.is_shortcut_modal_open = false; // Chiudi la finestra
-                        }            
-                    });
-                }
-                // Se la shortcut viene premuta... -> da sostituire con l'azione di cattura
-                if ctx.input(|i| i.clone().consume_shortcut(&self.my_shortcut)) {
-                // Esegui azioni basate sulla copia di InputState
-                    self.acquiring=true;
-                    frame.set_visible(false);
-                    println!("Shortcut premuta!");
-                }         
-            });
-                // --- PANNELLO CENTRALE ---
+            self.top_panel(ctx,frame);
             egui::CentralPanel::default().show(ctx, |ui| {
-                ui.heading(
+                ui.centered_and_justified(|ui|{
+                    ui.heading(
                     format!(
-                        "Premi il tasto {} per catturare il contenuto dello schermo senza avviare l'Applicazione",
+                        "Premi il tasto {} per catturare il contenuto dello schermo",
                         self.my_shortcut.format(&ModifierNames {
                             is_short: false,
                             alt: "Alt",
@@ -442,39 +573,47 @@ impl eframe::App for MyApp<'_>{
                             mac_alt: "Option",
                             concat: "+",
                         }, self.is_mac)
-                    )
-                );  
+                     )
+                    );  
+                });
             });
         }
         if self.acquiring{
-            self.counter+=1;
-            println!("{}",self.counter);            
+            self.counter += 1;
+            //print!("{}",self.counter);            
             ctx.request_repaint();
-            if self.counter==20{
+            if self.counter == 20{
+                let screens = Screen::all().unwrap(); 
+                let screen = screens[self.screen-1];  
                 self.acquired=false;
                 let start = SystemTime::now();
                 sleep(Duration::new(DELAYS_VALUES[self.delay], 0));
                 match start.elapsed() {
-                    Ok(_elapsed) => {
-                        let screens = Screen::all().unwrap();                   
-                        for screen in screens {
-                            println!("capturer {screen:?}");
-                            let image = screen.capture().unwrap();
-                            self.color_image=Some(egui::ColorImage::from_rgba_unmultiplied([image.width() as usize,image.height() as usize], image.as_bytes()));
-                            self.handle= Some(ctx.load_texture("handle", self.color_image.clone().unwrap(),egui::TextureOptions::LINEAR));
-                            let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
-                            // println!("{} {} ",color_image.size[0],color_image.size[1]);
-                            self.img = Some(egui::Image::from_texture(sized_image));
-                        }
+                    Ok(_elapsed) => {               
+                        println!("capturer {screen:?}");
+                        let image = screen.capture().unwrap();
+                        self.color_image=Some(egui::ColorImage::from_rgba_unmultiplied([image.width() as usize,image.height() as usize], image.as_bytes()));
+                        self.handle= Some(ctx.load_texture("handle", self.color_image.clone().unwrap(),egui::TextureOptions::LINEAR));
+                        let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
+                        // println!("{} {} ",color_image.size[0],color_image.size[1]);
+                        self.img = Some(egui::Image::from_texture(sized_image));
+                        self.window_scale=ctx.pixels_per_point();                     
                     }
                     Err(_e) => {
                         println!("Timer error");
                     }
                 }
                 frame.set_visible(true);
-                frame.set_fullscreen(true);
+                if self.capture == 1{
+                    self.acquiring = false;
+                    self.acquired = true;
+                    self.counter=0;
+                } else {
+                    frame.set_window_pos(egui::Pos2::new(screen.display_info.x as f32, screen.display_info.y as f32));
+                    frame.set_fullscreen(true);
+                }
             }
-            if self.counter>=20{  
+            if self.counter>20{  
                 egui::Window::new("")
                     .title_bar(false)
                     .frame(egui::Frame{fill:egui::Color32::from_white_alpha(10), ..Default::default()})
@@ -484,8 +623,11 @@ impl eframe::App for MyApp<'_>{
                     
                     self.img.clone().unwrap().paint_at(ui, ctx.screen_rect());
                     
-                    let (response, painter) = ui.allocate_painter(ctx.screen_rect().size(),egui::Sense::click_and_drag() );                    ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
-                   
+                  //  let screens = Screen::all().unwrap();                   
+
+                    let (response, painter) = ui.allocate_painter(ctx.screen_rect().size(),egui::Sense::click_and_drag() );                  
+                  ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+                    // (response, painter) = ui.allocate_painter(egui::Vec2::new((screens[1].display_info.width+screens[0].display_info.width) as f32, screens[0].display_info.height as f32),egui::Sense::click_and_drag());
                     painter.rect_filled( ctx.screen_rect(), Rounding::ZERO, Color32::from_rgba_premultiplied(0, 0, 0, 130));
                     if self.acquired{ 
                         let rect = Rect::from_two_pos(self.start_pos.unwrap(), self.current_pos.unwrap());
@@ -494,7 +636,6 @@ impl eframe::App for MyApp<'_>{
                         self.handle= Some(ctx.load_texture("handle", self.color_image.clone().unwrap(),egui::TextureOptions::LINEAR));
                         let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
                         self.img = Some(egui::Image::from_texture(sized_image));
-                        self.window_scale=self.img.clone().unwrap().size().unwrap().x/(rect.max.x-rect.min.x);
                         self.acquiring=false;
                         self.counter=0;
                         frame.set_fullscreen(false);
@@ -519,30 +660,27 @@ impl eframe::App for MyApp<'_>{
             }
         }
         if self.acquired && !self.acquiring{
-
-            egui::TopBottomPanel::top("my_panel").show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.button("\u{2795} Nuovo").on_hover_text("Nuova Cattura").clicked() {
-                        self.acquiring=true;
-                        // print!("pulsante premuto");                                
-                        frame.set_visible(false);
-                                         
-                    }
-                    ui.add_space(10.0);
-                    if ui.button("\u{2795} Ritaglia").clicked() {
+            self.top_panel(ctx, frame);
+            egui::SidePanel::left(egui::Id::new("my left panel")).exact_width(25.0).resizable(false).show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    if ui.button("Ritaglia").clicked() {
                         self.is_cropping=true;
-                        self.set_temp_image(self.color_image.clone());
                         println!("taglia");
                     }
 
+                    if ui.add(egui::Button::new(egui::RichText::new("\u{270F}").size(22.0)).frame(false)).on_hover_text("Draw").clicked() {
+                        self.acquiring_pen = true;
+                        self.painting.ui_control(ui);
+                    }
                     if self.is_cropping {
                         let mut pressed = false;
                         ui.with_layer_id(
                             LayerId::new(egui::Order::Foreground, Id::from("Save")),
                             |ui| {
-                                ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
-                                    let save = ui.add_sized([20., 10.], Button::new("Save"));
-                                    let cancel = ui.add_sized([20., 10.], Button::new("Cancel"));
+                                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                                    let save = ui.add_sized([20., 10.], egui::Button::new("Save"));
+                                    ui.add_space(10.0);
+                                    let cancel = ui.add_sized([20., 10.], egui::Button::new("Cancel"));
 
                                     let save_rect = save.rect;
                                     let cancel_rect = cancel.rect;
@@ -558,14 +696,14 @@ impl eframe::App for MyApp<'_>{
                                                 if self.get_selected_area().is_some() {
                                                     // let im = self.get_temp_image().unwrap().region(&self.get_selected_area().unwrap(), None);
                                                     // self.color_image=Some(im);
-                                                    let rect = self.get_selected_area().unwrap();
                                                     // let window_pos = frame.info().window_info.position.unwrap();
+                                                    let rect = self.get_selected_area().unwrap();
                                                     let pixels_per_point = frame.info().native_pixels_per_point;
                                                     self.color_image=Some(self.color_image.clone().unwrap().region(&rect, pixels_per_point));
                                                     self.handle= Some(ctx.load_texture("handle", self.color_image.clone().unwrap(),egui::TextureOptions::LINEAR));
                                                     let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
                                                     self.img = Some(egui::Image::from_texture(sized_image));
-                                                    self.window_scale=self.img.clone().unwrap().size().unwrap().x/(rect.max.x-rect.min.x);
+                                                    self.window_scale=ctx.pixels_per_point();
                                                 }
 
                                                 //save in memory in case of cancel
@@ -605,35 +743,28 @@ impl eframe::App for MyApp<'_>{
                     }
                 
                 });
-                
+            
             });
             egui::CentralPanel::default().show(ctx, |ui| {
-                self.image_sz = egui::vec2(self.img.clone().unwrap().size().unwrap().x / self.window_scale, self.img.clone().unwrap().size().unwrap().y / self.window_scale);      
-                let mut pos_1 = Pos2::new(0.0, 0.0);
-                let mut pos_2 = Pos2::new(0.0, 0.0);
-                
-                ui.centered_and_justified(|ui|{
-                    let image_captured = ui.add(self.img.clone().unwrap().shrink_to_fit().max_size(self.image_sz));
-                    pos_1 = image_captured.rect.left_top();
-                    pos_2 = image_captured.rect.right_bottom();
-                    self.set_selected_area(Some(Rect::from_two_pos(pos_1, pos_2)));
-                    
-                });
+                self.image_size = egui::vec2(self.img.clone().unwrap().size().unwrap().x / self.window_scale, self.img.clone().unwrap().size().unwrap().y / self.window_scale);        
+                let rect = get_centre_rect(ui,self.image_size);
+                self.set_selected_area(Some(rect));
+                self.img.clone().unwrap().paint_at(ui,rect);
+                if self.acquiring_pen {
+                        self.painting.ui_content(ui,ctx,rect);
+
+                }
 
                 if self.is_cropping {
-                    
+
                     egui::Window::new("")
                     .title_bar(false)
                     .frame(egui::Frame{fill:egui::Color32::from_white_alpha(10), ..Default::default()})
                     .movable(false)
-                    .constraint_to(Rect::from_min_max(pos_1, pos_2))
+                    .constraint_to(Rect::from_min_max(rect.min, rect.max))
                     .show(ctx, |ui| {
-                    
 
-                    let (response, mut painter) = ui.allocate_painter(self.image_sz,egui::Sense::click_and_drag() );                    
-                    println!("painter");
-                    println!("selection: {:?}", self.selected_area);
-
+                    let (response, mut painter) = ui.allocate_painter(self.image_size,egui::Sense::click_and_drag() );                    
                     painter.rect_filled(ctx.screen_rect(), Rounding::ZERO, Color32::from_rgba_premultiplied(0, 0, 0, 130));
                     
                     
@@ -658,20 +789,45 @@ impl eframe::App for MyApp<'_>{
                         }
                         
                     }
-                    
+
                     if self.cropped { 
                         self.set_selected_area(Some(Rect::from_two_pos(self.start_pos.unwrap(), self.end_pos.unwrap())));
                         print!("new selection: {:?}", self.selected_area);
                         painter.rect(self.selected_area.unwrap(), Rounding::ZERO,  Color32::from_rgba_premultiplied(30, 30, 30, 30),Stroke::new(2.0, Color32::WHITE) );
                         self.scale_selection(ctx, frame, &mut painter);         
                     }
-                });
 
-
+                    });
                 }
-                
             });
         }
         
     }
+
 }
+
+fn get_centre_rect(ui: &egui::Ui,image_size: egui::Vec2) -> egui::Rect {
+    let ratio = image_size.x/image_size.y;
+    let mut w = ui.available_width();
+    if w > image_size.x {
+        w = image_size.x;
+    }
+    let mut h = w / ratio;
+    if h > ui.available_height() {
+        h = ui.available_height();
+        w = h * ratio;
+    }
+
+    let mut rect = ui.available_rect_before_wrap();
+    //println!("{} {} {} {}",rect.min.x,rect.min.y,rect.max.x,rect.max.y);
+    if rect.width() > w {
+        rect.min.x += (rect.width() - w) / 2.0;
+        rect.max.x = rect.min.x + w;
+    }  
+    if rect.height() > h {
+        rect.min.y += (rect.height() - h) / 2.0;
+        rect.max.y = rect.min.y + h;
+    }
+    return rect;
+}
+
