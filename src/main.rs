@@ -22,7 +22,7 @@ fn main() -> Result<(), eframe::Error> {
         "screen capture",
         options,
         Box::new(|cc|{
-            egui_extras::install_image_loaders(&cc.egui_ctx);
+            //egui_extras::install_image_loaders(&cc.egui_ctx);
             Box::new(MyApp::new(cc))
             })
     )
@@ -69,22 +69,25 @@ impl Painting {
             ui.add_space(5.0);
             if ui.button("Clear").clicked() {
                 self.lines.clear();
+                self.temp_lines.clear();
             }
             ui.add_space(10.0);
-            if ui.add_enabled(!self.lines.is_empty(), egui::Button::new("indietro")).clicked() {
+            if self.lines.is_empty() {
+                self.lines.push((vec![], self.stroke.clone()));
+            }
+            if ui.add_enabled(self.lines.len()>1, egui::Button::new(egui::RichText::new("↩").size(18.0))).on_hover_text("Annulla").clicked() {
                 println!(" lines: {}", self.lines.len());
                 let _ =self.lines.pop();
                 if let Some(line) = self.lines.pop() {
-                    println!(" lines: {}", self.lines.len());
                     self.temp_lines.push(line);
-                    println!("Temp lines: {}", self.temp_lines.len());
+                    self.lines.push((vec![], self.stroke.clone()));
                 }
             }
             ui.add_space(10.0);
-            if ui.add_enabled(self.temp_lines.len() > 0, egui::Button::new("avanti")).clicked() {
-                println!(" lines: {}", self.lines.len());
+            if ui.add_enabled(self.temp_lines.len() > 0, egui::Button::new(egui::RichText::new("↪").size(18.0))).on_hover_text("Ripristina").clicked() {
+                self.lines.pop();
                 self.lines.push(self.temp_lines.pop().unwrap());
-                println!("Temp lines: {}", self.temp_lines.len());
+                self.lines.push((vec![], self.stroke.clone()));
             }
 
         
@@ -99,10 +102,6 @@ impl Painting {
         );
         let from_screen = to_screen.inverse();
 
-        if self.lines.is_empty() {
-            self.lines.push((vec![], self.stroke.clone()));
-        }
-
         let current_line = self.lines.last_mut().unwrap();
 
         if let Some(pointer_pos) = response.interact_pointer_pos() {
@@ -112,8 +111,9 @@ impl Painting {
                 current_line.1 = self.stroke.clone();
                 response.mark_changed();
             }
-        } else if !current_line.0.is_empty() {
+        } else if !current_line.0.is_empty() { 
             self.lines.push((vec![], self.stroke.clone()));
+            self.temp_lines.clear();
             response.mark_changed();
         }
 
@@ -154,6 +154,8 @@ struct MyApp<'a>{
     screen:usize,
     painting:Painting,
     acquiring_pen:bool,
+    screenshot: Option<egui::ColorImage>,
+    cutting: bool
 }
 
 impl MyApp<'_>{
@@ -187,7 +189,7 @@ impl MyApp<'_>{
             captures:vec!["Rettangolo", "Schermo intero", "Finestra","Mano libera"],
             delays:vec!["Nessun ritardo", "3 secondi", "5 secondi","10 secondi"],
             capture:0,delay:0,is_mac:match cc.egui_ctx.os(){ egui::os::OperatingSystem::Mac => true, _ => false },is_shortcut_modal_open:false,start_pos:None,current_pos:None,screen:1,
-            painting:Painting::default(),acquiring_pen:false,
+            painting:Painting::default(),acquiring_pen:false,screenshot:None,cutting:false
         }
     }
 
@@ -239,7 +241,7 @@ impl MyApp<'_>{
                     }
                     if self.acquired{
                         if ui.button(egui::RichText::new("salva").size(14.0)).on_hover_text("").clicked() {
-                            
+                            frame.request_screenshot();                            
                         }
                     }
                 });
@@ -368,7 +370,7 @@ impl eframe::App for MyApp<'_>{
                   //  let screens = Screen::all().unwrap();                   
 
                     let (response, painter) = ui.allocate_painter(ctx.screen_rect().size(),egui::Sense::click_and_drag() );                  
-                  ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+                    ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
                     // (response, painter) = ui.allocate_painter(egui::Vec2::new((screens[1].display_info.width+screens[0].display_info.width) as f32, screens[0].display_info.height as f32),egui::Sense::click_and_drag());
                     painter.rect_filled( ctx.screen_rect(), Rounding::ZERO, Color32::from_rgba_premultiplied(0, 0, 0, 130));
                     if self.acquired{ 
@@ -379,6 +381,8 @@ impl eframe::App for MyApp<'_>{
                         let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
                         self.img = Some(egui::Image::from_texture(sized_image));
                         self.acquiring=false;
+                        self.painting.lines.clear();
+                        self.painting.temp_lines.clear();
                         self.counter=0;
                         frame.set_fullscreen(false);
                     }
@@ -403,7 +407,7 @@ impl eframe::App for MyApp<'_>{
         }
         if self.acquired && !self.acquiring{
             self.top_panel(ctx, frame);
-            egui::SidePanel::left(egui::Id::new("my left panel")).exact_width(25.0).resizable(false).show(ctx, |ui| {
+            egui::SidePanel::left(egui::Id::new("my left panel")).exact_width(35.0).resizable(false).show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     if ui.add(egui::Button::new(egui::RichText::new("\u{270F}").size(22.0)).frame(false)).on_hover_text("Draw").clicked() {
                         self.acquiring_pen = true;
@@ -412,16 +416,41 @@ impl eframe::App for MyApp<'_>{
                 });
             });
             egui::CentralPanel::default().show(ctx, |ui| {
+                println!("{} {}  {} {}",ui.available_rect_before_wrap().min.x,ui.available_rect_before_wrap().min.y,ui.available_rect_before_wrap().max.x,ui.available_rect_before_wrap().max.y);
                 let image_size = egui::vec2(self.img.clone().unwrap().size().unwrap().x / self.window_scale, self.img.clone().unwrap().size().unwrap().y / self.window_scale);        
                 let rect = get_centre_rect(ui,image_size);
                 self.img.clone().unwrap().paint_at(ui,rect);
                 if self.acquiring_pen {
-                        self.painting.ui_content(ui,ctx,rect);
-
+                    self.painting.ui_content(ui,ctx,rect);
+                }
+                if self.cutting {
+                    let pixels_per_point = frame.info().native_pixels_per_point;
+                    let region = egui::Rect::from_two_pos(
+                        //egui::Pos2 { x: ui.available_rect_before_wrap().min.x + rect.min.x, y: ui.available_rect_before_wrap().min.y + rect.min.y },
+                        //egui::Pos2 { x: ui.available_rect_before_wrap().max.x + rect.max.x, y: ui.available_rect_before_wrap().max.y + rect.max.y },
+                        egui::Pos2 { x: rect.min.x , y: rect.min.y },
+                        egui::Pos2 { x: rect.max.x , y: rect.max.y },
+                    );
+                    let top_left_corner = self.screenshot.clone().unwrap().region(&region, pixels_per_point);
+                    image::save_buffer(
+                        "top_left.png",
+                        top_left_corner.as_raw(),
+                        top_left_corner.width() as u32,
+                        top_left_corner.height() as u32,
+                        image::ColorType::Rgba8,
+                    ).unwrap();
+                    self.cutting=false;
                 }
             });
         }
         
+    }
+
+    fn post_rendering(&mut self, _window_size: [u32; 2], frame: &eframe::Frame) {
+        if let Some(screenshot) = frame.screenshot() {
+            self.cutting=true;            
+            self.screenshot = Some(screenshot);
+        }
     }
 
 }
