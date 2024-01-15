@@ -11,7 +11,7 @@ fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(500.0, 240.0)),
         centered: true,
-        min_window_size: Some(egui::vec2(600.0, 295.0)),
+        min_window_size: Some(egui::vec2(600.0, 375.0)),
         ..Default::default()
     };
 

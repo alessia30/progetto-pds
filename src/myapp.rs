@@ -29,7 +29,7 @@ pub struct MyApp<'a>{
     current_pos:Option<egui::Pos2>,
     screen:usize,
     painting:Painting,
-    acquiring_pen:bool,
+    
     screenshot: Option<egui::ColorImage>,
     cutting: bool
 }
@@ -73,7 +73,7 @@ impl MyApp<'_>{
             captures:vec!["Rettangolo", "Schermo intero", "Finestra"],
             delays:vec!["Nessun ritardo", "3 secondi", "5 secondi","10 secondi"],
             capture:0,delay:0,is_mac:match cc.egui_ctx.os(){ egui::os::OperatingSystem::Mac => true, _ => false },is_shortcut_modal_open:false,start_pos:None,current_pos:None,screen:1,
-            painting:Painting::default(),acquiring_pen:false,screenshot:None,cutting:false
+            painting:Painting::default(),screenshot:None,cutting:false
         }
     }
 
@@ -82,7 +82,7 @@ impl MyApp<'_>{
             ui.horizontal_centered(|ui| {
                 if ui.add(egui::Button::new(egui::RichText::new("\u{2795} Nuovo").size(14.0))).on_hover_text("Nuova Cattura").clicked() {
                     self.acquiring = true;
-                    self.acquiring_pen = false;
+                    self.painting.drawing_pen = false;
                     //print!("pulsante premuto");                                
                     frame.set_visible(false);                                               
                 }
@@ -126,10 +126,16 @@ impl MyApp<'_>{
                     }
                     if self.acquired{
                         if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/save.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Salva").clicked() {
-                            frame.request_screenshot();                            
+                            frame.request_screenshot();  
+                                 
+                        }
+                        if self.counter==1{
+                            frame.request_screenshot();
+                            self.counter=0;
                         }
                         if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/clipboard.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Copia").clicked() {
-                            frame.request_screenshot();                            
+                            frame.set_maximized(true);
+                            self.counter=1;                          
                         }
                     }
                 });
@@ -253,10 +259,10 @@ impl eframe::App for MyApp<'_>{
                     self.counter=0;
                 } else {
                     frame.set_window_pos(egui::Pos2::new(screen.display_info.x as f32, screen.display_info.y as f32));
-                    frame.set_fullscreen(true);
                 }
             }
             if self.counter>20{  
+                frame.set_fullscreen(true);
                 egui::Window::new("")
                     .title_bar(false)
                     .frame(egui::Frame{fill:egui::Color32::from_white_alpha(10), ..Default::default()})
@@ -266,7 +272,7 @@ impl eframe::App for MyApp<'_>{
                     
                     self.img.clone().unwrap().paint_at(ui, ctx.screen_rect());                  
 
-                    let (response, painter) = ui.allocate_painter(ctx.screen_rect().size(),egui::Sense::click_and_drag() );                  
+                    let (response, painter) = ui.allocate_painter(ctx.screen_rect().size(),egui::Sense::click_and_drag() );            
                     ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
                     painter.rect_filled( ctx.screen_rect(), Rounding::ZERO, Color32::from_rgba_premultiplied(0, 0, 0, 130));
                     if self.acquired{ 
@@ -309,14 +315,6 @@ impl eframe::App for MyApp<'_>{
                     if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/cut.png")).max_height(19.0))).on_hover_text("Ritaglia").clicked() {
 
                     }
-                    ui.add_space(10.0);
-                    let pen = ui.add(egui::Button::new(egui::RichText::new("\u{270F}").size(18.0))).on_hover_text("Penna"); 
-                    if pen.clicked() {
-                        self.acquiring_pen = !(self.acquiring_pen);
-                    }
-                    if self.acquiring_pen {
-                        pen.highlight();
-                    }
                     self.painting.ui_control(ui);
                 });
             });
@@ -325,14 +323,15 @@ impl eframe::App for MyApp<'_>{
                 let image_size = egui::vec2(self.img.clone().unwrap().size().unwrap().x / self.window_scale, self.img.clone().unwrap().size().unwrap().y / self.window_scale);        
                 let rect = get_centre_rect(ui,image_size);
                 self.img.clone().unwrap().paint_at(ui,rect);
-                self.painting.ui_content(ui,self.acquiring_pen,rect);
+                self.painting.ui_content(ui,rect);
                 if self.cutting {
                     let pixels_per_point = frame.info().native_pixels_per_point;
-                    let region = egui::Rect::from_two_pos(
-                        egui::Pos2 { x: rect.min.x , y: rect.min.y },
-                        egui::Pos2 { x: rect.max.x , y: rect.max.y },
-                    );
-                    let top_left_corner = self.screenshot.clone().unwrap().region(&region, pixels_per_point);
+                    println!("{:?}",rect);
+                    println!("{}",pixels_per_point.unwrap());
+                    println!("{} {:?}",self.screenshot.clone().unwrap().pixels.len(),self.screenshot.clone().unwrap().size);
+                    let top_left_corner = self.screenshot.clone().unwrap().region(&rect, pixels_per_point);
+                    println!("{} {:?}",top_left_corner.pixels.len(),top_left_corner.size);
+                    frame.set_maximized(false);
                     image::save_buffer(
                         "top_left.png",
                         top_left_corner.as_raw(),
@@ -354,7 +353,7 @@ impl eframe::App for MyApp<'_>{
     }
 }
 
-fn get_centre_rect(ui: &egui::Ui,image_size: egui::Vec2) -> egui::Rect {
+fn get_centre_rect(ui: &egui::Ui,image_size: Vec2) -> egui::Rect {
     let ratio = image_size.x/image_size.y;
     let mut w = ui.available_width();
     if w > image_size.x {
