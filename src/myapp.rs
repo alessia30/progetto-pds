@@ -125,13 +125,13 @@ impl MyApp<'_>{
                         self.is_shortcut_modal_open = true;
                     }
                     if self.acquired{
-                        if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/save.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Salva").clicked() {
-                            frame.request_screenshot();  
-                                 
-                        }
                         if self.counter==1{
                             frame.request_screenshot();
                             self.counter=0;
+                        }
+                        if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/save.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Salva").clicked() {
+                            frame.set_maximized(true);
+                            self.counter=1;   
                         }
                         if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/clipboard.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Copia").clicked() {
                             frame.set_maximized(true);
