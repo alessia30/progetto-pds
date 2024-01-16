@@ -6,10 +6,17 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-eframe = "0.23.0"
-egui = "0.23.0"
+eframe = {features = [
+    "__screenshot", # __screenshot is so we can dump a screenshot using EFRAME_SCREENSHOT_TO
+    "wgpu",
+] }
+egui = "0.22.0"
 egui_extras = { version = "*", features = ["all_loaders"] }
 egui_hotkey = "0.2.0"
 image = { version = "0.24", features = ["jpeg", "png"] }
 instant = "0.1.12"
 screenshots = "0.8.4"
+env_logger = { version = "0.10", default-features = false, features = [
+    "auto-color",
+    "humantime",
+] }
