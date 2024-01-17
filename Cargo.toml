@@ -10,7 +10,7 @@ eframe = {features = [
     "__screenshot", # __screenshot is so we can dump a screenshot using EFRAME_SCREENSHOT_TO
     "wgpu",
 ] }
-egui = "0.22.0"
+egui = "0.23.0"
 egui_extras = { version = "*", features = ["all_loaders"] }
 egui_hotkey = "0.2.0"
 image = { version = "0.24", features = ["jpeg", "png"] }

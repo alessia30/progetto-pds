@@ -327,28 +327,90 @@ impl MyApp<'_>{
 
     fn update_area (&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, pos: Pos2, status: Status, painter: &mut Painter) {
         let sel = self.get_selected_area().expect("Selected area must be some when updating it");
-        let mut new_min = sel.min;
+        let mut new_min = sel.min; 
         let mut new_max = sel.max;
-        println!("pos: {:?}", pos);
-
+        //println!("pos: {:?}", pos);
+        let image_rect = self.get_centered_area().unwrap();
         if ctx.input(|i| i.pointer.primary_down()) {
             match self.get_status() {
                 Status::None => self.set_status(status), //set status if enters with None
                 Status::Select => unreachable!("Sould not be un select mode during update"),
-                Status::TopLeft => new_min = pos,
-                Status::TopMid => {new_min = pos2(sel.min.x, pos.y); println!("{:?}", new_min)},
+                Status::TopLeft => {
+                    if pos.x < image_rect.min.x {
+                        new_min.x = image_rect.min.x 
+                    } else {
+                        new_min.x = pos.x;
+                    }
+                    if pos.y < image_rect.min.y {
+                        new_min.y = image_rect.min.y; 
+                    } else {
+                        new_min.y = pos.y;
+                    }
+                },
+                Status::TopMid => {
+                    if pos.y < image_rect.min.y {
+                        new_min.y = image_rect.min.y; 
+                    } else {
+                        new_min.y = pos.y;
+                    }
+                },
                 Status::TopRight => {
-                    new_min = pos2(sel.min.x, pos.y);
-                    new_max = pos2(pos.x, sel.max.y);
-                }
-                Status::MidLeft => new_min = pos2(pos.x, sel.min.y),
-                Status::MidRight => new_max = pos2(pos.x, sel.max.y),
+                    if pos.y < image_rect.min.y {
+                        new_min.y = image_rect.min.y 
+                    } else {
+                        new_min.y = pos.y;
+                    }
+                    if pos.x > image_rect.max.x {
+                        new_max.x = image_rect.max.x; 
+                    } else {
+                        new_max.x = pos.x;
+                    }
+                },
+                Status::MidLeft => {
+                    if pos.x < image_rect.min.x {
+                        new_min.x = image_rect.min.x 
+                    } else {
+                        new_min.x = pos.x;
+                    }
+                },
+                Status::MidRight => {
+                    if pos.x > image_rect.max.x {
+                        new_max.x = image_rect.max.x; 
+                    } else {
+                        new_max.x = pos.x;
+                    }
+                },
                 Status::BotLeft => {
-                    new_min = pos2(pos.x, sel.min.y);
-                    new_max = pos2(sel.max.x, pos.y);
-                }
-                Status::BotMid => new_max = pos2(sel.max.x, pos.y),
-                Status::BotRight => new_max = pos,
+                    if pos.x < image_rect.min.x {
+                        new_min.x = image_rect.min.x;
+                    } else {
+                        new_min.x = pos.x;
+                    }
+                    if pos.y > image_rect.max.y {
+                        new_max.y = image_rect.max.y; 
+                    } else {
+                        new_max.y = pos.y;
+                    }
+                },
+                Status::BotMid => {
+                    if pos.y > image_rect.max.y {
+                        new_max.y = image_rect.max.y; 
+                    } else {
+                        new_max.y = pos.y;
+                    }
+                },
+                Status::BotRight => {
+                    if pos.x > image_rect.max.x {
+                        new_max.x = image_rect.max.x 
+                    } else {
+                        new_max.x = pos.x;
+                    }
+                    if pos.y > image_rect.max.y {
+                        new_max.y = image_rect.max.y; 
+                    } else {
+                        new_max.y = pos.y;
+                    }
+                },
                 Status::Move =>  {
                     ctx.set_cursor_icon(CursorIcon::Grabbing);
 
@@ -373,12 +435,12 @@ impl MyApp<'_>{
                     //update center
                     let mut new_center = pos2(pos.x - center_distance.x, pos.y - center_distance.y);
 
-                    //check that new center is inside window
+                    //check that new center is inside rect
                     {
                         let size = sel.size();
-                        let window_size = _frame.info().window_info.size;
+                        let image_size = image_rect.size();
 
-                        new_center = new_center.clamp((size/2.).to_pos2(), (window_size.to_pos2() - pos2(size[0]/2. , size[1]/2.)).to_pos2());
+                        new_center = new_center.clamp(image_rect.min + (size/2.) , (image_rect.max - pos2(size[0]/2. , size[1]/2.)).to_pos2());
                     }
                     
                     //update area with new center
@@ -607,15 +669,18 @@ impl eframe::App for MyApp<'_>{
                                                     let region = self.get_selected_area().unwrap();
                                                     let im = self.get_centered_area().unwrap();
                                                     let window = frame.info().window_info.size;
-                                                    println!("window {:?}",window);
+                                                    println!("selected area {:?}",region);
                                                     println!("centered area: {:?}", self.get_centered_area());
-
-                                                    let rw = region.width() / self.window_scale;
-                                                    let rh = region.height() / self.window_scale;
+                                                    println!("{:?}",self.color_image.as_ref().unwrap().size);
+                                                    
+                                                    let scale_x = im.width()/region.width();
+                                                    let scale_y = im.height()/region.height();
+                                                    println!("{} {}",scale_x,scale_y);
+                                                    let rw = (self.color_image.as_ref().unwrap().width() as f32 / self.window_scale ) / scale_x ;
+                                                    let rh = (self.color_image.as_ref().unwrap().height() as f32 / self.window_scale ) / scale_y ;
                                                     //set min centerd area as min
-                                                    let min_x = region.min.x - im.min.x;
-                                                    let min_y = region.min.y - im.min.y;
-                                                    let rect = Rect::from_min_size(pos2(min_x, min_y), vec2(rw, rh));
+                                                    
+                                                    
 
                                                     //scale width and length
                                                     // let wl = window[1];
@@ -630,11 +695,12 @@ impl eframe::App for MyApp<'_>{
                                                     // let scale_height = ((rl * il) / wl) / self.window_scale;
 
                                                     
-                                                    // let rect = Rect::from_min_size(pos2(min_x, min_y), Vec2::new(scale_width, scale_height));
+                                                    let rect = Rect::from_min_size(pos2((region.min.x-im.min.x)*rw/region.width(), (region.min.y-im.min.y)*rh/region.height()), Vec2::new(rw, rh));
         
                                                     // let scale_rect = Rect::from_min_size(pos2(scale_rect_x, scale_rect_y), Vec2::new(scale_width, scale_height));
                                                     println!("scaled rect: {:?}", rect);
                                                     self.color_image=Some(self.color_image.clone().unwrap().region(&rect, pixels_per_point));
+                                                    println!("{:?}",self.color_image.as_ref().unwrap().size);
                                                     self.handle= Some(ctx.load_texture("handle", self.color_image.clone().unwrap(),egui::TextureOptions::LINEAR));
                                                     // let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
                                                     let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
@@ -722,6 +788,7 @@ impl eframe::App for MyApp<'_>{
                     .title_bar(false)
                     .frame(egui::Frame{fill:egui::Color32::from_white_alpha(10), ..Default::default()})
                     .movable(false)
+                    .fixed_rect(rect)
                     .constraint_to(Rect::from_min_max(rect.min, rect.max))
                     .show(ctx, |ui| {
 
@@ -755,7 +822,7 @@ impl eframe::App for MyApp<'_>{
 
                     if self.cropped { 
                         self.set_selected_area(Some(Rect::from_two_pos(self.start_pos.unwrap(), self.end_pos.unwrap())));
-                        print!("new selection: {:?}", self.selected_area);
+                        //print!("new selection: {:?}", self.selected_area);
                         painter.rect(self.selected_area.unwrap(), Rounding::ZERO,  Color32::from_rgba_premultiplied(30, 30, 30, 30),Stroke::new(2.0, Color32::WHITE) );
                         self.scale_selection(ctx, frame, &mut painter);         
                     }
