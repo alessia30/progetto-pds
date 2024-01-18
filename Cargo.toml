@@ -13,3 +13,7 @@ egui_hotkey = "0.2.0"
 image = { version = "0.24", features = ["jpeg", "png"] }
 instant = "0.1.12"
 screenshots = "0.8.4"
+env_logger = { version = "0.10", default-features = false, features = [
+    "auto-color",
+    "humantime",
+] }

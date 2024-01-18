@@ -11,7 +11,8 @@ pub struct Painting {
     pub drawing_pen:bool,
     pub drawing_rect:bool,
     pub drawing_circle:bool,
-    start_pos: Option<egui::Pos2>
+    start_pos: Option<egui::Pos2>,
+    pub prec_area: Option<egui::Rect>,
 }
 
 impl Default for Painting {
@@ -24,6 +25,7 @@ impl Default for Painting {
             drawing_rect:false,
             drawing_circle:false,
             start_pos: None,
+            prec_area: None,
         }
     }
 }
@@ -112,11 +114,22 @@ impl Painting {
     pub fn ui_content(&mut self, ui: &mut egui::Ui, rect: egui::Rect)-> egui::Response { 
        
         let (mut response, painter) = ui.allocate_painter(ui.min_size(), egui::Sense::drag());
-        let to_screen = egui::emath::RectTransform::from_to(
-            Rect::from_min_size(egui::Pos2::ZERO, rect.square_proportions()),
-            rect,
-        );
-        let from_screen = to_screen.inverse(); 
+        let to_screen;
+        if self.prec_area.is_some(){
+            to_screen = egui::emath::RectTransform::from_to(
+                self.prec_area.unwrap(),
+                rect,
+            );
+            println!("{:?}",self.prec_area.unwrap());
+            println!("{:?}",rect);
+            self.prec_area=None;
+        } else {
+            to_screen = egui::emath::RectTransform::from_to(
+                Rect::from_min_size(egui::Pos2::ZERO, rect.square_proportions()),
+                rect,
+            );
+        }
+        let from_screen = to_screen.inverse();
         if self.lines.is_empty() {
             self.lines.push((None,None,vec![], self.stroke.clone()));
         }
@@ -179,7 +192,6 @@ impl Painting {
                         let last_pos = to_screen * egui::Pos2 { x: cerchio.center.x, y: cerchio.center.y+cerchio.radius };
                         cerchio.center=to_screen * cerchio.center;
                         cerchio.radius=cerchio.center.distance(last_pos);
-                        println!("{} {} {}",cerchio.center.x,cerchio.center.y,cerchio.radius);
                         egui::Shape::Circle(cerchio)
                     }else{
                         let points: Vec<egui::Pos2> = line.iter().map(|p| to_screen * *p).collect();
@@ -188,5 +200,13 @@ impl Painting {
                 });
             painter.extend(shapes.clone());        
         response
+        }
+
+        pub fn set_false(&mut self){
+            self.lines.clear();
+            self.temp_lines.clear();
+            self.drawing_circle=false;
+            self.drawing_pen=false;
+            self.drawing_rect=false;
         }
 }
