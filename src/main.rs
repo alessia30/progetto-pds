@@ -14,6 +14,7 @@ use std::time::Instant;
 use image::{Rgba, RgbaImage, ImageFormat, ImageBuffer, DynamicImage};
 use std::path::Path;
 use chrono::{Local, DateTime};
+use native_dialog::FileDialog;
 
 static DELAYS_VALUES:[u64;4]=[0,3,5,10];
 
@@ -155,6 +156,7 @@ struct MyApp<'a>{
     timestamp:DateTime<Local>,
     painting:Painting,
     acquiring_pen:bool,
+    file_path:PathBuf,
 }
 
 impl MyApp<'_>{
@@ -176,7 +178,7 @@ impl MyApp<'_>{
             captures:vec!["Rettangolo", "Schermo intero", "Finestra","Mano libera"],
             delays:vec!["Nessun ritardo", "3 secondi", "5 secondi","10 secondi"],
             capture:0,delay:0,is_mac:match cc.egui_ctx.os(){ egui::os::OperatingSystem::Mac => true, _ => false },is_shortcut_modal_open:false,start_pos:None,current_pos:None,screen:1,clipboard:Clipboard::new().expect("Unable to create clipboard"),is_saving_modal_open:false,image_name:String::from("Prova"), sel_extension:FileExtension::Png,extension:String::from("png"),timestamp:Local::now(),
-            painting:Painting::default(),acquiring_pen:false,
+            painting:Painting::default(),acquiring_pen:false,file_path:PathBuf::default(),
         }
     }
 
@@ -254,9 +256,50 @@ impl MyApp<'_>{
                             }
                         }
                         if ui.button(egui::RichText::new("Salva").size(14.0)).on_hover_text("").clicked() {
-                            self.is_saving_modal_open = true;
-                        }
-                    }
+                            if let Some(path) = FileDialog::new()
+                                .add_filter("PNG", &["png"])
+                                .add_filter("JPG", &["jpg"])
+                                .add_filter("GIF", &["gif"])
+                                .set_filename(self.image_name.as_str())
+                                .show_save_single_file()
+                                .expect("Unable to visualize the file selection window") {
+                                    self.file_path = Some(path).unwrap();
+                                }
+                            
+                                let image = self.color_image.clone().unwrap();
+                                let pix: Vec<u8> = image
+                                    .pixels
+                                    .iter()
+                                    .flat_map(|p| p.to_array().iter().copied().collect::<Vec<u8>>())
+                                    .collect();
+                        
+                                let im: ImageBuffer<Rgba<u8>, Vec<_>> = ImageBuffer::from_vec(
+                                    image.width() as u32,
+                                    image.height() as u32,
+                                    pix,
+                                )
+                                .expect("Unable to obtain ImageBuffer from vec");
+                        
+                                match self.file_path.extension().and_then(|ext| ext.to_str()) {
+                                    Some("png") => {
+                                        im.save_with_format(&self.file_path, ImageFormat::Png)
+                                            .expect("Unable to save the image");
+                                    }
+                                    Some("jpg") => {
+                                        im.save_with_format(&self.file_path, ImageFormat::Jpeg)
+                                            .expect("Unable to save the image");
+                                    }
+                                    Some("gif") => {
+                                        im.save_with_format(&self.file_path, ImageFormat::Gif)
+                                            .expect("Unable to save the image");
+                                    }
+                                    _ => {
+                                        println!("Formato non supportato");
+                                    }
+                                }
+                            }
+                        }                        
+                    });
                 });
                 
             });
@@ -312,7 +355,8 @@ impl MyApp<'_>{
                 println!("{}", self.image_name);  
             }
 
-            // --- Gestione della window per le opzioni di salvataggio ---     
+            // --- Gestione della window per le opzioni di salvataggio ---   
+               
             if self.is_saving_modal_open {
                 egui::Window::new("Opzioni di salvataggio")
                     .resizable(false)
@@ -322,6 +366,7 @@ impl MyApp<'_>{
                             ctx.request_repaint();
                         }
 
+                    
                     egui::ComboBox::from_label("Seleziona un'estensione")
                         .selected_text(format!("{:?}", self.sel_extension))
                         .show_ui(ui, |ui| {
@@ -381,9 +426,8 @@ impl MyApp<'_>{
                             self.is_saving_modal_open = false; // Chiudi la finestra
                         }
                     });
-            }             
-        });
-    }
+            }           
+        }
 }
 
 impl eframe::App for MyApp<'_>{

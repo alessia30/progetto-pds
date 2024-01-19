@@ -16,4 +16,5 @@ egui_hotkey = "0.2.0"
 emath = "0.22.0"
 image = { version = "0.24", features = ["jpeg", "png"] }
 instant = "0.1.12"
+native-dialog = "0.7.0"
 screenshots = "0.8.4"
