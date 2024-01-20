@@ -117,6 +117,7 @@ impl MyApp<'_>{
             clipboard:Clipboard::new().expect("Unable to create clipboard"),
             copy:false,save:false,
             default_location:PathBuf::from("~"),
+            // default_location:PathBuf::default(),
         }
     }
 
@@ -125,6 +126,7 @@ impl MyApp<'_>{
             ui.horizontal_centered(|ui| {
                 if ui.add(egui::Button::new(egui::RichText::new("\u{2795} Nuovo").size(14.0))).on_hover_text("Nuova Cattura").clicked() {
                     self.acquiring = true;
+                    self.is_cropping=false;
                     //print!("pulsante premuto");                                
                     frame.set_visible(false);                                                
                 }
@@ -173,7 +175,7 @@ impl MyApp<'_>{
                         }
                         if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/save.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Salva").clicked() {
                             frame.set_maximized(true);
-                            frame.request_screenshot();
+                            // frame.request_screenshot();
                             self.counter=1;   
                             self.save = true;
                             self.timestamp = Local::now();
@@ -181,7 +183,7 @@ impl MyApp<'_>{
                         }
                         if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/clipboard.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Copia").clicked() {
                             frame.set_maximized(true);
-                            frame.request_screenshot();
+                            // frame.request_screenshot();
                             self.counter=1;
                             self.copy = true;
                         }
@@ -641,8 +643,8 @@ impl eframe::App for MyApp<'_>{
                     self.img.clone().unwrap().paint_at(ui, ctx.screen_rect());                  
 
                     let (response, painter) = ui.allocate_painter(ctx.screen_rect().size(),egui::Sense::click_and_drag() );            
-                    ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
                     painter.rect_filled( ctx.screen_rect(), Rounding::ZERO, Color32::from_rgba_premultiplied(0, 0, 0, 130));
+                    ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
                     if self.acquired{ 
                         let rect = Rect::from_two_pos(self.start_pos.unwrap(), self.current_pos.unwrap());
                         let pixels_per_point = frame.info().native_pixels_per_point;
@@ -655,7 +657,7 @@ impl eframe::App for MyApp<'_>{
                         self.counter=0;
                         frame.set_fullscreen(false);
                     }
-
+                    
                     if response.drag_started_by(PointerButton::Primary){
                         self.start_pos = response.interact_pointer_pos();
                         println!("START");
@@ -766,7 +768,10 @@ impl eframe::App for MyApp<'_>{
                             }
                             
                         }
+                        
+                    if !self.is_cropping {
                         self.painting.ui_control(ui);
+                    }
                         
                 });
             });
@@ -783,11 +788,11 @@ impl eframe::App for MyApp<'_>{
 
                 if self.cutting {
                     let pixels_per_point = frame.info().native_pixels_per_point;
-                    //println!("{:?}",rect);
-                    //println!("{}",pixels_per_point.unwrap());
-                    //println!("{} {:?}",self.screenshot.clone().unwrap().pixels.len(),self.screenshot.clone().unwrap().size);
+                    println!("rect {:?}",rect);
+                    println!("{}",pixels_per_point.unwrap());
+                    println!("screenshot pixel/size {} {:?}",self.screenshot.clone().unwrap().pixels.len(),self.screenshot.clone().unwrap().size);
                     let top_left_corner = self.screenshot.clone().unwrap().region(&rect, pixels_per_point);
-                    //println!("{} {:?}",top_left_corner.pixels.len(),top_left_corner.size);
+                    println!("top left corner: {} {:?}",top_left_corner.pixels.len(),top_left_corner.size);
                     frame.set_maximized(false);
                     if self.copy {
                         if let Err(e) = self.clipboard.set_image(arboard::ImageData {width: top_left_corner.width(), height: top_left_corner.height(), bytes: Cow::from(top_left_corner.as_raw())}) {
@@ -856,8 +861,15 @@ impl eframe::App for MyApp<'_>{
                     painter.rect_filled(ctx.screen_rect(), Rounding::ZERO, Color32::from_rgba_premultiplied(0, 0, 0, 130));
                                       
                     if !self.cropped {
-                        ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
                         let image_rect=self.get_centered_area().unwrap();
+                        let pointer_pos = ctx.pointer_hover_pos();
+                        if pointer_pos.is_some() {
+                            if rect.contains(pointer_pos.unwrap()) {
+                                ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+                            }
+                        }
+
+
                         if response.drag_started_by(PointerButton::Primary){
                             self.start_pos = response.interact_pointer_pos();
                             println!("START");
