@@ -1,10 +1,17 @@
 use crate::painting::Painting;
 use eframe::egui;
-use egui::{ Key, Modifiers, ModifierNames, KeyboardShortcut, PointerButton, RawInput, Vec2, Widget, Rect, Rounding, Color32, Stroke, LayerId, Id, CursorIcon, pos2, Context, Painter, Pos2, Order };
+use egui::{ Key, Modifiers, ModifierNames, KeyboardShortcut, PointerButton, Vec2, Rect, Rounding, Color32, Stroke, LayerId, Id, CursorIcon, pos2, Context, Painter, Pos2, Order };
 use screenshots::Screen;
+use std::path::{ PathBuf };
 use std::time::{Duration, SystemTime};
 use std::thread::sleep;
 use image::EncodableLayout;
+use native_dialog::FileDialog;
+use chrono::{ Local, DateTime };
+use image::{ ImageBuffer, Rgba, ImageFormat };
+use arboard::Clipboard;
+use std::borrow::Cow;
+
 
 static DELAYS_VALUES:[u64;4]=[0,3,5,10];
 
@@ -53,6 +60,13 @@ pub struct MyApp<'a>{
     centered_area:Option<Rect>,
     status: Status,
     image_size: Vec2,
+    file_path:PathBuf,
+    timestamp:DateTime<Local>,
+    image_name:String,
+    clipboard:Clipboard,
+    copy:bool,
+    save:bool,
+    default_location:PathBuf,
 }
 
 impl MyApp<'_>{
@@ -97,6 +111,12 @@ impl MyApp<'_>{
             capture:0,delay:0,is_mac:match cc.egui_ctx.os(){ egui::os::OperatingSystem::Mac => true, _ => false },is_shortcut_modal_open:false,start_pos:None,current_pos:None,screen:1,
             painting:Painting::default(),screenshot:None,cutting:false,end_pos:None,center_pos:None, is_cropping:false,cropped:false,selected_area:None,centered_area:None,
             status:Status::None,image_size:egui::vec2(0.0, 0.0),
+            file_path:PathBuf::default(),
+            timestamp:Local::now(),
+            image_name:String::from("Nome Immagine"),
+            clipboard:Clipboard::new().expect("Unable to create clipboard"),
+            copy:false,save:false,
+            default_location:PathBuf::from("~"),
         }
     }
 
@@ -106,7 +126,7 @@ impl MyApp<'_>{
                 if ui.add(egui::Button::new(egui::RichText::new("\u{2795} Nuovo").size(14.0))).on_hover_text("Nuova Cattura").clicked() {
                     self.acquiring = true;
                     //print!("pulsante premuto");                                
-                    frame.set_visible(false);                                               
+                    frame.set_visible(false);                                                
                 }
                 ui.add_space(10.0);
                 let screens = Screen::all().unwrap();
@@ -153,11 +173,17 @@ impl MyApp<'_>{
                         }
                         if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/save.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Salva").clicked() {
                             frame.set_maximized(true);
+                            frame.request_screenshot();
                             self.counter=1;   
+                            self.save = true;
+                            self.timestamp = Local::now();
+                            self.image_name = self.timestamp.format("Immagine %Y-%m-%d %H%M%S").to_string(); 
                         }
                         if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/clipboard.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Copia").clicked() {
                             frame.set_maximized(true);
-                            self.counter=1;                          
+                            frame.request_screenshot();
+                            self.counter=1;
+                            self.copy = true;
                         }
                     }
                 });
@@ -166,7 +192,7 @@ impl MyApp<'_>{
     
             // --- Gestione della window per la modifica della shortcut ---
             if self.is_shortcut_modal_open {
-                egui::Window::new("Modifica shortcut").collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, egui::vec2(10.0, 45.0)).show(&ctx, |ui| {                     
+                egui::Window::new("Impostazioni").collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, egui::vec2(10.0, 45.0)).show(&ctx, |ui| {                     
                     // Qui puoi rilevare gli eventi di input e aggiornare la variabile key
                     //ui.visuals_mut().panel_fill = Color32::from_gray(70);
                     for event in ui.input(|i| i.events.clone()) {
@@ -185,8 +211,19 @@ impl MyApp<'_>{
                         }
                     }
                     
-                    
                     ui.add_space(5.0);
+                    ui.label(&format!("Locazione di default: {}", self.default_location.display()));
+                    ui.add_space(5.0);
+                    if ui.button("Modifica locazione di default").clicked() {
+                        if let Some(path) = FileDialog::new()
+                            .set_location(&self.default_location)
+                            .show_open_single_dir()
+                            .expect("Unable to visualize the file selection window") {
+                                self.default_location = Some(path).unwrap();
+                            }
+                    }  
+                    ui.add_space(20.0);
+                    ui.label(&format!("Premi dei tasti per modificare la shortcut."));
                     ui.label(&format!("Hai premuto: {:?}", self.new_shortcut.format(&ModifierNames {
                         is_short: false,
                         alt: "Alt",
@@ -196,21 +233,17 @@ impl MyApp<'_>{
                         mac_alt: "Option",
                         concat: "+",
                     }, self.is_mac)));
-                    ui.add_space(15.0);
-                    ui.horizontal(|ui| {
-                        ui.add_space(5.0);
-                        if ui.button("Salva").clicked() {
-                            // Salva le modifiche
-                            self.my_shortcut.modifiers = self.new_shortcut.modifiers;
-                            self.my_shortcut.key = self.new_shortcut.key;
-                            self.is_shortcut_modal_open = false; // Chiudi la finestra
-                        }
-                        ui.add_space(30.0);
-                        if ui.button("Chiudi").clicked() {
-                            self.is_shortcut_modal_open = false; // Chiudi la finestra
-                        }     
-                        ui.add_space(5.0);
-                    });
+                    ui.add_space(10.0);
+                    if ui.button("Salva shortcut").clicked() {
+                        // Salva le modifiche
+                        self.my_shortcut.modifiers = self.new_shortcut.modifiers;
+                        self.my_shortcut.key = self.new_shortcut.key;
+                        self.is_shortcut_modal_open = false; // Chiudi la finestra
+                    }
+                    ui.add_space(30.0);
+                    if ui.button("Chiudi").clicked() {
+                        self.is_shortcut_modal_open = false; // Chiudi la finestra
+                    }     
                     ui.add_space(5.0); 
                 });
             }
@@ -329,7 +362,7 @@ impl MyApp<'_>{
         }
      }
 
-    fn update_area (&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, pos: Pos2, status: Status, painter: &mut Painter) {
+    fn update_area (&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, pos: Pos2, status: Status, _painter: &mut Painter) {
         let sel = self.get_selected_area().expect("Selected area must be some when updating it");
         let mut new_min = sel.min; 
         let mut new_max = sel.max;
@@ -583,10 +616,18 @@ impl eframe::App for MyApp<'_>{
                     self.acquiring = false;
                     self.acquired = true;
                     self.counter=0;
-                    self.painting.set_false();
+                    self.painting.set_false(); 
                 } else {
                     frame.set_window_pos(egui::Pos2::new(screen.display_info.x as f32, screen.display_info.y as f32));
                 }
+                match self.clipboard.clear() {
+                    Ok(()) => {
+                        println!("Clipboard cleared successfully");
+                    }
+                    Err(err) => {
+                        eprintln!("Error while clearing the clipboard: {:?}", err);
+                    }
+                }  
             }
             if self.counter>20{  
                 frame.set_fullscreen(true);
@@ -749,6 +790,50 @@ impl eframe::App for MyApp<'_>{
                     let top_left_corner = self.screenshot.clone().unwrap().region(&rect, pixels_per_point);
                     //println!("{} {:?}",top_left_corner.pixels.len(),top_left_corner.size);
                     frame.set_maximized(false);
+                    if self.copy {
+                        if let Err(e) = self.clipboard.set_image(arboard::ImageData {width: top_left_corner.width(), height: top_left_corner.height(), bytes: Cow::from(top_left_corner.as_raw())}) {
+                            println!("Unable to copy in the clipboard: {:?}", e);
+                        }
+                        self.copy = false;
+                    }
+                    if self.save {
+                        if let Some(path) = FileDialog::new()
+                            .set_location(&self.default_location)
+                            .add_filter("PNG", &["png"])
+                            .add_filter("JPG", &["jpg"])
+                            .add_filter("GIF", &["gif"])
+                            .set_filename(self.image_name.as_str())
+                            .show_save_single_file()
+                            .expect("Unable to visualize the file selection window") {
+                                self.file_path = Some(path).unwrap();
+                            }
+                        
+                        let im: ImageBuffer<Rgba<u8>, Vec<_>> = ImageBuffer::from_vec(
+                            top_left_corner.width() as u32,
+                            top_left_corner.height() as u32,
+                            top_left_corner.as_raw().to_vec(),
+                        )
+                        .expect("Unable to obtain ImageBuffer from vec");
+
+                        match self.file_path.extension().and_then(|ext| ext.to_str()) {
+                            Some("png") => {
+                                im.save_with_format(&self.file_path, ImageFormat::Png)
+                                    .expect("Unable to save the image");
+                            }
+                            Some("jpg") => {
+                                im.save_with_format(&self.file_path, ImageFormat::Jpeg)
+                                    .expect("Unable to save the image");
+                            }
+                            Some("gif") => {
+                                im.save_with_format(&self.file_path, ImageFormat::Gif)
+                                    .expect("Unable to save the image");
+                            }
+                            _ => {
+                                println!("Formato non supportato");
+                            }
+                        }
+                        self.save = false;
+                    }
                     image::save_buffer(
                         "top_left.png",
                         top_left_corner.as_raw(),

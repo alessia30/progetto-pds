@@ -17,3 +17,6 @@ env_logger = { version = "0.10", default-features = false, features = [
     "auto-color",
     "humantime",
 ] }
+native-dialog = "0.7.0"
+chrono = "0.4.31"
+arboard = "3.3.0"
