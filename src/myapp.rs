@@ -2,13 +2,13 @@ use crate::painting::Painting;
 use eframe::egui;
 use egui::{ Key, Modifiers, ModifierNames, KeyboardShortcut, PointerButton, Vec2, Rect, Rounding, Color32, Stroke, LayerId, Id, CursorIcon, pos2, Context, Painter, Pos2, Order };
 use screenshots::Screen;
-use std::path::PathBuf;
+use std::path::{ PathBuf };
 use std::time::{Duration, SystemTime};
 use std::thread::sleep;
 use image::EncodableLayout;
 use native_dialog::FileDialog;
-use chrono::{Local, DateTime};
-use image::{ImageBuffer, Rgba, ImageFormat};
+use chrono::{ Local, DateTime };
+use image::{ ImageBuffer, Rgba, ImageFormat };
 use arboard::Clipboard;
 use std::borrow::Cow;
 
@@ -66,6 +66,7 @@ pub struct MyApp<'a>{
     clipboard:Clipboard,
     copy:bool,
     save:bool,
+    default_location:PathBuf,
 }
 
 impl MyApp<'_>{
@@ -115,6 +116,7 @@ impl MyApp<'_>{
             image_name:String::from("Nome Immagine"),
             clipboard:Clipboard::new().expect("Unable to create clipboard"),
             copy:false,save:false,
+            default_location:PathBuf::from("~"),
         }
     }
 
@@ -190,7 +192,7 @@ impl MyApp<'_>{
     
             // --- Gestione della window per la modifica della shortcut ---
             if self.is_shortcut_modal_open {
-                egui::Window::new("Modifica shortcut").collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, egui::vec2(10.0, 45.0)).show(&ctx, |ui| {                     
+                egui::Window::new("Impostazioni").collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, egui::vec2(10.0, 45.0)).show(&ctx, |ui| {                     
                     // Qui puoi rilevare gli eventi di input e aggiornare la variabile key
                     //ui.visuals_mut().panel_fill = Color32::from_gray(70);
                     for event in ui.input(|i| i.events.clone()) {
@@ -209,8 +211,18 @@ impl MyApp<'_>{
                         }
                     }
                     
-                    
                     ui.add_space(5.0);
+                    ui.label(&format!("Locazione di default: {}", self.default_location.display()));
+                    ui.add_space(5.0);
+                    if ui.button("Modifica locazione di default").clicked() {
+                        if let Some(path) = FileDialog::new()
+                            .set_location(&self.default_location)
+                            .show_open_single_dir()
+                            .expect("Unable to visualize the file selection window") {
+                                self.default_location = Some(path).unwrap();
+                            }
+                    }  
+                    ui.add_space(20.0);
                     ui.label(&format!("Premi dei tasti per modificare la shortcut."));
                     ui.label(&format!("Hai premuto: {:?}", self.new_shortcut.format(&ModifierNames {
                         is_short: false,
@@ -221,21 +233,17 @@ impl MyApp<'_>{
                         mac_alt: "Option",
                         concat: "+",
                     }, self.is_mac)));
-                    ui.add_space(15.0);
-                    ui.horizontal(|ui| {
-                        ui.add_space(5.0);
-                        if ui.button("Salva").clicked() {
-                            // Salva le modifiche
-                            self.my_shortcut.modifiers = self.new_shortcut.modifiers;
-                            self.my_shortcut.key = self.new_shortcut.key;
-                            self.is_shortcut_modal_open = false; // Chiudi la finestra
-                        }
-                        ui.add_space(30.0);
-                        if ui.button("Chiudi").clicked() {
-                            self.is_shortcut_modal_open = false; // Chiudi la finestra
-                        }     
-                        ui.add_space(5.0);
-                    });
+                    ui.add_space(10.0);
+                    if ui.button("Salva shortcut").clicked() {
+                        // Salva le modifiche
+                        self.my_shortcut.modifiers = self.new_shortcut.modifiers;
+                        self.my_shortcut.key = self.new_shortcut.key;
+                        self.is_shortcut_modal_open = false; // Chiudi la finestra
+                    }
+                    ui.add_space(30.0);
+                    if ui.button("Chiudi").clicked() {
+                        self.is_shortcut_modal_open = false; // Chiudi la finestra
+                    }     
                     ui.add_space(5.0); 
                 });
             }
@@ -789,6 +797,7 @@ impl eframe::App for MyApp<'_>{
                     }
                     if self.save {
                         if let Some(path) = FileDialog::new()
+                            .set_location(&self.default_location)
                             .add_filter("PNG", &["png"])
                             .add_filter("JPG", &["jpg"])
                             .add_filter("GIF", &["gif"])
