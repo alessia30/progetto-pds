@@ -1,7 +1,7 @@
-use std::{vec, ops::DerefMut};
+use std::{ vec };
 
 use eframe::egui;
-use egui::{  Rect, Color32, Stroke, epaint::RectShape };
+use egui::{  Rect, Color32, Stroke };
 
 pub struct Painting {
     /// in 0-1 normalized coordinates
