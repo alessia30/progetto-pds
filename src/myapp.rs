@@ -173,7 +173,7 @@ impl MyApp<'_>{
                         }
                         if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/save.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Salva").clicked() {
                             frame.set_maximized(true);
-                            frame.request_screenshot();
+                            
                             self.counter=1;   
                             self.save = true;
                             self.timestamp = Local::now();
@@ -181,7 +181,7 @@ impl MyApp<'_>{
                         }
                         if ui.add(egui::Button::image(egui::Image::new(egui::include_image!("icons/clipboard.png")).max_height(22.0)).fill(egui::Color32::TRANSPARENT)).on_hover_text("Copia").clicked() {
                             frame.set_maximized(true);
-                            frame.request_screenshot();
+                            
                             self.counter=1;
                             self.copy = true;
                         }
@@ -786,7 +786,7 @@ impl eframe::App for MyApp<'_>{
                     let pixels_per_point = frame.info().native_pixels_per_point;
                     //println!("{:?}",rect);
                     //println!("{}",pixels_per_point.unwrap());
-                    //println!("{} {:?}",self.screenshot.clone().unwrap().pixels.len(),self.screenshot.clone().unwrap().size);
+                    println!("screenshot {} {:?}",self.screenshot.clone().unwrap().pixels.len(),self.screenshot.clone().unwrap().size);
                     let top_left_corner = self.screenshot.clone().unwrap().region(&rect, pixels_per_point);
                     //println!("{} {:?}",top_left_corner.pixels.len(),top_left_corner.size);
                     frame.set_maximized(false);

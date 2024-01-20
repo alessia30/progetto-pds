@@ -115,7 +115,9 @@ impl Painting {
 
     pub fn ui_content(&mut self, ui: &mut egui::Ui, rect: egui::Rect)-> egui::Response { 
        
-        let (mut response, painter) = ui.allocate_painter(ui.min_size(), egui::Sense::drag());
+        let (mut response, mut painter) = ui.allocate_painter(ui.min_size(), egui::Sense::click_and_drag());
+        painter.set_clip_rect(rect);
+        
         let to_screen;
         let mut from_screen;
         if self.prec_area.is_some(){
