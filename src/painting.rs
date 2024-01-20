@@ -1,4 +1,4 @@
-use std::{ vec };
+use std::vec;
 
 use eframe::egui;
 use egui::{  Rect, Color32, Stroke };
@@ -13,6 +13,7 @@ pub struct Painting {
     pub drawing_circle:bool,
     start_pos: Option<egui::Pos2>,
     pub prec_area: Option<egui::Rect>,
+    pub cutted_area: Option<egui::Rect>,
 }
 
 impl Default for Painting {
@@ -26,6 +27,7 @@ impl Default for Painting {
             drawing_circle:false,
             start_pos: None,
             prec_area: None,
+            cutted_area: None,
         }
     }
 }
@@ -115,21 +117,60 @@ impl Painting {
        
         let (mut response, painter) = ui.allocate_painter(ui.min_size(), egui::Sense::drag());
         let to_screen;
+        let mut from_screen;
         if self.prec_area.is_some(){
-            to_screen = egui::emath::RectTransform::from_to(
-                self.prec_area.unwrap(),
-                rect,
+            let to_screen_temp = egui::emath::RectTransform::from_to(
+                Rect::from_min_size(egui::Pos2::ZERO, self.prec_area.unwrap().square_proportions()),
+                 self.prec_area.unwrap(),
             );
-            println!("{:?}",self.prec_area.unwrap());
-            println!("{:?}",rect);
+            from_screen = to_screen_temp.inverse();
+            let prec_area_min =from_screen * self.prec_area.unwrap().min;
+            let cutted_area_min =  from_screen * self.cutted_area.unwrap().min;
+            let trasl = egui::vec2(prec_area_min.x - cutted_area_min.x, prec_area_min.y - cutted_area_min.y);
+            to_screen = egui::emath::RectTransform::from_to(
+                Rect::from_min_size(egui::Pos2::ZERO, self.cutted_area.unwrap().square_proportions()),
+                Rect::from_min_size(self.prec_area.unwrap().min,self.cutted_area.unwrap().size()),
+            );
+            from_screen = to_screen.inverse();
+            for line in &mut self.lines {
+                if let Some(rectangle) = &mut line.0 {
+                    rectangle.rect.min.x += trasl.x;
+                    rectangle.rect.min.y += trasl.y;
+                    rectangle.rect.min = to_screen_temp * rectangle.rect.min;
+                    rectangle.rect.min = from_screen * rectangle.rect.min;
+
+                    rectangle.rect.max.x += trasl.x;
+                    rectangle.rect.max.y += trasl.y;
+                    rectangle.rect.max = to_screen_temp * rectangle.rect.max;
+                    rectangle.rect.max = from_screen * rectangle.rect.max;
+
+                } else if let Some(circle) = &mut line.1 {
+                    circle.center.x += trasl.x;
+                    circle.center.y += trasl.y;
+                    let r_pos = egui::pos2(circle.center.x + circle.radius, circle.center.y);
+                    let r_pos_transf = from_screen * (to_screen_temp * r_pos);
+                    circle.center = to_screen_temp * circle.center;
+                    circle.center = from_screen * circle.center;
+                    circle.radius = circle.center.distance(r_pos_transf);
+
+                } else {
+                    for pos in &mut line.2 {
+                        pos.x += trasl.x;
+                        pos.y += trasl.y;
+                        *pos= to_screen_temp * *pos;
+                        *pos= from_screen * *pos;
+                    }
+                }
+            }
             self.prec_area=None;
         } else {
             to_screen = egui::emath::RectTransform::from_to(
                 Rect::from_min_size(egui::Pos2::ZERO, rect.square_proportions()),
                 rect,
             );
+            from_screen = to_screen.inverse();
         }
-        let from_screen = to_screen.inverse();
+         
         if self.lines.is_empty() {
             self.lines.push((None,None,vec![], self.stroke.clone()));
         }
