@@ -690,7 +690,8 @@ impl eframe::App for MyApp<'_>{
                                                     let sized_image = egui::load::SizedTexture::new(self.handle.clone().unwrap().id(), egui::vec2(self.color_image.clone().unwrap().size[0] as f32, self.color_image.clone().unwrap().size[1] as f32));
                                                     self.img = Some(egui::Image::from_texture(sized_image));
                                                     self.window_scale=ctx.pixels_per_point();                 
-                                                    self.painting.prec_area=Some(region);
+                                                    self.painting.prec_area=Some(im);
+                                                    self.painting.cutted_area=Some(region);
                                                 }
                                                 
                                                 //save in memory in case of cancel
