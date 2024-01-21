@@ -1,6 +1,4 @@
 
-<<<<<<< HEAD
-=======
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -14,4 +12,3 @@ screenshots = "0.8.4"
 native-dialog = "0.7.0"
 chrono = "0.4.31"
 arboard = "3.3.0"
->>>>>>> francesco
