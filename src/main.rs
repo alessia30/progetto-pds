@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 mod myapp;
 mod painting;
+mod cutting;
 
 use myapp::MyApp;
 use eframe::egui;

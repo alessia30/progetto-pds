@@ -41,7 +41,6 @@ pub fn my_stroke_ui(ui: &mut crate::egui::Ui, stroke: &mut egui::epaint::Stroke,
         ui.color_edit_button_srgba(color).on_hover_text("Colore"); 
         ui.add_space(5.0);
         ui.label(text);
-        // stroke preview:
         let (_id, stroke_rect) = ui.allocate_space(ui.spacing().interact_size);
         let left = stroke_rect.left_center();
         let right = stroke_rect.right_center();
