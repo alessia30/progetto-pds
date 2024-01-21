@@ -1,15 +1,1 @@
-[package]
-name = "progetto-pds"
-version = "0.1.0"
-edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-eframe = "0.23.0"
-egui = "0.23.0"
-egui_extras = { version = "*", features = ["all_loaders"] }
-egui_hotkey = "0.2.0"
-image = { version = "0.24", features = ["jpeg", "png"] }
-instant = "0.1.12"
-screenshots = "0.8.4"
