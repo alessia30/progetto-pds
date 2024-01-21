@@ -1,1 +1,17 @@
 
+<<<<<<< HEAD
+=======
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+eframe = "0.23.0"
+egui = "0.23.0"
+egui_extras = { version = "0.23.0", features = ["all_loaders"] }
+egui_hotkey = "0.2.0"
+image = { version = "0.24", features = ["jpeg", "png"] }
+instant = "0.1.12"
+screenshots = "0.8.4"
+native-dialog = "0.7.0"
+chrono = "0.4.31"
+arboard = "3.3.0"
+>>>>>>> francesco
